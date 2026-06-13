@@ -33,4 +33,5 @@ Default training audio is pink noise synthesized in the browser with the Web Aud
 Releases are tagged on GitHub; any prior version is restorable from the Releases page.
 
 - **`v1.0-light`** — the original light "paper & ink" theme.
-- **`v2.0-dark`** — the dark "pro-console" theme matching the Troubleshooting Lab, plus a live EQ-curve display, streak + accuracy meter, and richer answer feedback (current).
+- **`v2.0-dark`** — the dark "pro-console" theme matching the Troubleshooting Lab, plus a live EQ-curve display, streak + accuracy meter, and richer answer feedback.
+- **`v2.1`** — responsive three-zone "bench" layout: a persistent course/progress rail, a center training stage, and an always-visible session HUD on desktop; on mobile the same zones stack and the transport docks to a fixed bottom bar in the thumb zone. No audio/scoring/curriculum changes (current).
