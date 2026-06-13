@@ -12,6 +12,7 @@ ear-training-lab/  (GitHub: audiouniversityonline-sketch/ear-training-lab → Gi
 ├── curriculum-free.json             (3 sample tasks + locked-level tease metadata)
 ├── sources/                         (curated source-material WAV library; see its README)
 │   └── README.md
+├── design-system.css                (shared AU interactive-tool tokens + component recipes)
 ├── README.md                        (repo overview + the push-to-deploy pipeline)
 └── HANDOFF.md                       (this file)
 ```

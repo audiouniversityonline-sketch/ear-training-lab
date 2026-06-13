@@ -1,0 +1,99 @@
+/* =============================================================================
+   Audio University — Interactive Training Tool Design System
+   -----------------------------------------------------------------------------
+   The canonical dark "pro-console" language shared across the training-tool
+   suite (Ear Training Lab, Troubleshooting Lab, and future tools).
+
+   The tools ship as self-contained single-file apps (for GitHub Pages + Circle
+   iframe embedding), so they do NOT link this file at runtime — they COPY these
+   tokens and recipes inline. Treat this as the source of truth: when a token or
+   component recipe changes, update it here first, then propagate to each app.
+
+   Note: this is the language for INTERACTIVE tools. It intentionally differs
+   from the print/video brand guideline (black & white, Futura/Poppins).
+   ============================================================================= */
+
+:root {
+  /* Surfaces (dark) */
+  --bg: #0e0e10;        /* page background */
+  --panel: #1b1b1e;     /* primary panel / card */
+  --panel-2: #232327;   /* raised panel, inputs */
+  --panel-3: #2c2c31;   /* hover wash */
+  --line: #38383e;      /* borders / dividers */
+  --line-2: #4a4a52;    /* stronger border */
+
+  /* Foreground */
+  --ink: #e9e6df;       /* primary text */
+  --ink-2: #a5a29a;     /* secondary text */
+  --ink-3: #6c6a64;     /* tertiary / axis labels */
+  --label: #d9d5cb;
+
+  /* Accent + semantics */
+  --accent: #ffc93a;        /* gold — primary accent / active controls / CTAs */
+  --accent-dark: #a37500;   /* gold gradient bottom + active border */
+  --accent-light: #ffe082;  /* gold gradient top highlight */
+  --hot: #ff4630;           /* error / incorrect / urgent */
+  --green: #4ade80;         /* success / correct / ready */
+  --amber: #ffb547;         /* warning */
+  --cool: #6aa9ff;          /* info */
+  --aux: #b88dff;           /* auxiliary */
+}
+
+/* -----------------------------------------------------------------------------
+   Typography
+   - Display : 'Bricolage Grotesque' 600–800, letter-spacing -0.02em  (headings, wordmark, big numbers)
+   - Body    : 'Geist' 400–700                                        (UI text, paragraphs)
+   - Mono    : 'Geist Mono' 400–600, UPPERCASE for labels/eyebrows    (stats, axis labels, badges)
+   Google Fonts:
+   https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap
+   --------------------------------------------------------------------------- */
+.display { font-family: 'Bricolage Grotesque', 'Geist', sans-serif; letter-spacing: -0.02em; }
+.mono    { font-family: 'Geist Mono', ui-monospace, monospace; }
+
+/* -----------------------------------------------------------------------------
+   RECIPE — gold active/selected control (buttons, tabs, pills, channels)
+   Use dark text (#0d0d0e) on gold; never light text on gold.
+   --------------------------------------------------------------------------- */
+.is-active {
+  background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+  color: #0d0d0e;
+  border: 1px solid var(--accent-dark);
+  border-top: 1px solid var(--accent-light);
+  box-shadow: 0 0 10px rgba(255, 201, 58, 0.45), inset 0 1px 0 rgba(255, 224, 130, 0.6);
+}
+
+/* RECIPE — panel / card */
+.panel { background: var(--panel); border: 1px solid var(--line); }
+.panel-raised { background: var(--panel-2); border: 1px solid var(--line); }
+
+/* RECIPE — feedback (answer reveal, etc.) */
+@keyframes correctGlow {
+  0%   { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+  35%  { box-shadow: 0 0 22px 2px rgba(74, 222, 128, 0.5); }
+  100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+}
+@keyframes wrongFlash {
+  0%, 100% { transform: translateX(0); box-shadow: 0 0 0 0 rgba(255, 70, 48, 0); }
+  15%      { transform: translateX(-4px); box-shadow: 0 0 16px 1px rgba(255, 70, 48, 0.45); }
+  45%      { transform: translateX(3px); }
+  70%      { transform: translateX(-2px); }
+}
+.feedback-correct { animation: correctGlow 900ms ease-out; border-color: var(--green) !important; }
+.feedback-wrong   { animation: wrongFlash 440ms ease-out; border-color: var(--hot) !important; }
+
+/* RECIPE — LED meter segment (accuracy / level)
+   Lit segment uses a semantic colour with a matching glow; unlit is panel-3. */
+.led-on  { box-shadow: 0 0 4px currentColor; }
+.led-off { background: var(--panel-3); opacity: 0.5; box-shadow: inset 0 0 2px #000; }
+
+/* RECIPE — data-viz / EQ-curve grid (SVG) */
+.eq-grid-line  { stroke: var(--line); stroke-width: 1; }
+.eq-zero-line  { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 3 3; }
+.eq-axis-label { fill: var(--ink-3); font-family: 'Geist Mono', monospace; font-size: 9px; }
+/* Curve strokes: actual = var(--accent) solid; comparison/guess = var(--ink-3) dashed. */
+
+/* RECIPE — focus ring */
+*:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* RECIPE — modal scrim */
+.scrim { background: rgba(8, 8, 9, 0.94); }

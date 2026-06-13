@@ -6,13 +6,13 @@
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
-  <meta name="theme-color" content="#0a0a0a" />
+  <meta name="theme-color" content="#0e0e10" />
   <title>Ear Training Lab — Audio University</title>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
-    href="https://fonts.googleapis.com/css2?family=Poppins:ital,wght@0,400;0,500;0,600;0,700;1,700;1,800&family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500;700&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:wght@600;700;800&family=Geist:wght@400;500;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
     rel="stylesheet"
   />
 
@@ -22,16 +22,28 @@
       theme: {
         extend: {
           fontFamily: {
-            display: ['Poppins', 'system-ui', 'sans-serif'],
-            sans: ['Inter', 'system-ui', 'sans-serif'],
-            mono: ['JetBrains Mono', 'ui-monospace', 'monospace']
+            display: ['Bricolage Grotesque', 'Geist', 'system-ui', 'sans-serif'],
+            sans: ['Geist', 'system-ui', 'sans-serif'],
+            mono: ['Geist Mono', 'ui-monospace', 'monospace']
           },
           colors: {
-            ink: '#0a0a0a',
-            paper: '#fafaf7',
-            rule: '#e6e4de',
-            mute: '#8a8680',
-            accent: '#e63946'
+            ink: '#e9e6df',
+            'ink-2': '#a5a29a',
+            'ink-3': '#6c6a64',
+            paper: '#0e0e10',
+            panel: '#1b1b1e',
+            'panel-2': '#232327',
+            'panel-3': '#2c2c31',
+            rule: '#38383e',
+            'line-2': '#4a4a52',
+            mute: '#a5a29a',
+            accent: '#ffc93a',
+            hot: '#ff4630',
+            green: '#4ade80',
+            amber: '#ffb547',
+            cool: '#6aa9ff',
+            aux: '#b88dff',
+            label: '#d9d5cb'
           }
         }
       }
@@ -42,11 +54,26 @@
     :root {
       --safe-top: env(safe-area-inset-top, 0px);
       --safe-bottom: env(safe-area-inset-bottom, 0px);
-      --ink: #0a0a0a;
-      --paper: #fafaf7;
-      --rule: #e6e4de;
-      --mute: #8a8680;
-      --accent: #e63946;
+      /* Dark "pro-console" system — shared with the Troubleshooting Lab (see design-system.css). */
+      --ink: #e9e6df;      /* primary foreground (light on dark) */
+      --ink-2: #a5a29a;    /* secondary text */
+      --ink-3: #6c6a64;    /* tertiary text */
+      --paper: #0e0e10;    /* page background (dark) */
+      --panel: #1b1b1e;
+      --panel-2: #232327;
+      --panel-3: #2c2c31;
+      --rule: #38383e;     /* borders / dividers */
+      --line-2: #4a4a52;
+      --mute: #a5a29a;     /* legacy alias -> secondary text */
+      --accent: #ffc93a;   /* gold — primary accent / CTA */
+      --accent-dark: #a37500;
+      --accent-light: #ffe082;
+      --hot: #ff4630;      /* incorrect / urgent */
+      --green: #4ade80;    /* correct */
+      --amber: #ffb547;
+      --cool: #6aa9ff;
+      --aux: #b88dff;
+      --label: #d9d5cb;
     }
 
     html, body {
@@ -55,7 +82,7 @@
       padding: 0;
       background: var(--paper);
       color: var(--ink);
-      font-family: 'Inter', system-ui, sans-serif;
+      font-family: 'Geist', system-ui, sans-serif;
       -webkit-font-smoothing: antialiased;
       -moz-osx-font-smoothing: grayscale;
     }
@@ -77,25 +104,28 @@
       font-family: inherit;
     }
 
+    /* Type helpers (mirror the suite's .display / .mono) */
+    .mono { font-family: 'Geist Mono', ui-monospace, monospace; }
+    .display { font-family: 'Bricolage Grotesque', 'Geist', sans-serif; letter-spacing: -0.02em; }
+
     /* Brand wordmark */
     .brand-word {
-      font-family: 'Poppins', sans-serif;
+      font-family: 'Bricolage Grotesque', 'Geist', sans-serif;
       font-weight: 800;
-      font-style: italic;
       letter-spacing: -0.02em;
     }
 
     /* Focus ring — quiet but clear */
     *:focus { outline: none; }
     *:focus-visible {
-      outline: 2px solid var(--ink);
+      outline: 2px solid var(--accent);
       outline-offset: 2px;
     }
 
     /* Shield logo (inline SVG used elsewhere) */
     .shield { display: inline-block; vertical-align: middle; }
 
-    /* Range input — minimalist black */
+    /* Range input — gold thumb on a dark track */
     input[type="range"] {
       -webkit-appearance: none;
       appearance: none;
@@ -107,7 +137,7 @@
     }
     input[type="range"]::-webkit-slider-runnable-track {
       height: 2px;
-      background: var(--ink);
+      background: var(--line-2);
       border-radius: 0;
     }
     input[type="range"]::-webkit-slider-thumb {
@@ -115,35 +145,35 @@
       appearance: none;
       width: 18px;
       height: 18px;
-      background: var(--ink);
+      background: var(--accent);
       border-radius: 50%;
       margin-top: -8px;
       cursor: pointer;
       border: 2px solid var(--paper);
-      box-shadow: 0 0 0 1px var(--ink);
+      box-shadow: 0 0 0 1px var(--accent), 0 0 6px rgba(255, 201, 58, 0.5);
     }
     input[type="range"]::-moz-range-track {
       height: 2px;
-      background: var(--ink);
+      background: var(--line-2);
       border-radius: 0;
     }
     input[type="range"]::-moz-range-thumb {
       width: 14px;
       height: 14px;
-      background: var(--ink);
+      background: var(--accent);
       border-radius: 50%;
       cursor: pointer;
       border: 2px solid var(--paper);
-      box-shadow: 0 0 0 1px var(--ink);
+      box-shadow: 0 0 0 1px var(--accent);
     }
 
-    /* Select — reset native chrome, add our chevron */
+    /* Select — reset native chrome, add our chevron (light stroke for dark bg) */
     select.au-select {
       -webkit-appearance: none;
       -moz-appearance: none;
       appearance: none;
       background-color: transparent;
-      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='none' stroke='%230a0a0a' stroke-width='1.5' d='M2 4.5l4 4 4-4'/></svg>");
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='none' stroke='%23e9e6df' stroke-width='1.5' d='M2 4.5l4 4 4-4'/></svg>");
       background-repeat: no-repeat;
       background-position: right 12px center;
       padding-right: 32px !important;
@@ -156,10 +186,10 @@
       justify-content: center;
       gap: 8px;
       padding: 10px 16px;
-      border: 1px solid var(--ink);
-      background: var(--paper);
+      border: 1px solid var(--line-2);
+      background: var(--panel-2);
       color: var(--ink);
-      font-family: 'Poppins', sans-serif;
+      font-family: 'Geist', sans-serif;
       font-weight: 600;
       font-size: 13px;
       letter-spacing: 0.02em;
@@ -167,16 +197,20 @@
       transition: all 120ms ease;
       cursor: pointer;
     }
-    .btn:hover:not(:disabled) { background: var(--ink); color: var(--paper); }
+    .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
     .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
+    /* Primary CTA — gold fill (the suite's active-control treatment) */
     .btn-solid {
-      background: var(--ink);
-      color: var(--paper);
+      background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+      color: #0d0d0e;
+      border: 1px solid var(--accent-dark);
+      border-top: 1px solid var(--accent-light);
+      box-shadow: 0 0 8px rgba(255, 201, 58, 0.33), inset 0 1px 0 rgba(255, 224, 130, 0.6);
     }
     .btn-solid:hover:not(:disabled) {
-      background: var(--paper);
-      color: var(--ink);
+      color: #0d0d0e;
+      box-shadow: 0 0 13px rgba(255, 201, 58, 0.5), inset 0 1px 0 rgba(255, 224, 130, 0.7);
     }
 
     .btn-ghost {
@@ -185,37 +219,40 @@
       color: var(--ink);
     }
     .btn-ghost:hover:not(:disabled) {
-      border-color: var(--ink);
+      border-color: var(--accent);
+      color: var(--accent);
     }
 
     /* Segmented control */
     .seg {
       display: inline-flex;
-      border: 1px solid var(--ink);
-      background: var(--paper);
+      border: 1px solid var(--line-2);
+      background: var(--panel);
     }
     .seg button {
       padding: 10px 16px;
-      font-family: 'Poppins', sans-serif;
+      font-family: 'Geist', sans-serif;
       font-weight: 600;
       font-size: 12px;
       letter-spacing: 0.04em;
       text-transform: uppercase;
       border: none;
       background: transparent;
-      color: var(--ink);
+      color: var(--ink-2);
       cursor: pointer;
       transition: all 120ms ease;
-      border-right: 1px solid var(--ink);
+      border-right: 1px solid var(--line-2);
     }
     .seg button:last-child { border-right: none; }
+    .seg button:hover:not(:disabled):not(.active) { color: var(--ink); background: var(--panel-3); }
     .seg button.active {
-      background: var(--ink);
-      color: var(--paper);
+      background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+      color: #0d0d0e;
+      box-shadow: inset 0 1px 0 rgba(255, 224, 130, 0.6);
     }
     .seg button:disabled { opacity: 0.35; cursor: not-allowed; }
 
-    /* Freq pill — clean, uniform, no gradients */
+    /* Freq pill */
     .freq-pill {
       display: flex;
       flex-direction: column;
@@ -223,19 +260,22 @@
       justify-content: center;
       padding: 14px 6px;
       min-height: 64px;
-      border: 1px solid var(--ink);
-      background: var(--paper);
-      font-family: 'JetBrains Mono', monospace;
+      border: 1px solid var(--line-2);
+      background: var(--panel-2);
+      font-family: 'Geist Mono', monospace;
       font-weight: 500;
       font-size: 14px;
       color: var(--ink);
       transition: all 120ms ease;
       cursor: pointer;
     }
-    .freq-pill:hover:not(:disabled) { background: #f0eee8; }
+    .freq-pill:hover:not(:disabled) { background: var(--panel-3); border-color: var(--ink-3); }
     .freq-pill.selected {
-      background: var(--ink);
-      color: var(--paper);
+      background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+      color: #0d0d0e;
+      border: 1px solid var(--accent-dark);
+      border-top: 1px solid var(--accent-light);
+      box-shadow: 0 0 10px rgba(255, 201, 58, 0.4), inset 0 1px 0 rgba(255, 224, 130, 0.6);
     }
     .freq-pill:disabled { opacity: 0.35; cursor: not-allowed; }
     .freq-pill .label { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
@@ -249,26 +289,28 @@
       align-items: center;
       justify-content: center;
       padding: 14px 8px;
-      border: 1px solid rgba(250, 250, 247, 0.3);
-      background: transparent;
-      color: rgba(250, 250, 247, 0.55);
-      font-family: 'Poppins', sans-serif;
+      border: 1px solid var(--line-2);
+      background: var(--panel);
+      color: var(--ink-2);
+      font-family: 'Geist', sans-serif;
       transition: all 140ms ease;
       cursor: pointer;
       min-height: 72px;
     }
-    .chan:hover:not(:disabled) { color: rgba(250, 250, 247, 0.85); border-color: rgba(250, 250, 247, 0.6); }
+    .chan:hover:not(:disabled) { color: var(--ink); border-color: var(--ink-3); }
     .chan.active {
-      background: var(--paper);
-      color: var(--ink);
-      border-color: var(--paper);
+      background: linear-gradient(180deg, var(--accent), var(--accent-dark));
+      color: #0d0d0e;
+      border: 1px solid var(--accent-dark);
+      border-top: 1px solid var(--accent-light);
+      box-shadow: 0 0 10px rgba(255, 201, 58, 0.45), inset 0 1px 0 rgba(255, 224, 130, 0.5);
     }
     .chan:disabled { opacity: 0.25; cursor: not-allowed; }
     .chan .letter { font-size: 22px; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
     .chan .role { font-size: 9px; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 6px; opacity: 0.8; }
     .chan.locked::after {
       content: '—';
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Geist Mono', monospace;
       font-size: 10px;
       margin-top: 2px;
       opacity: 0.6;
@@ -279,9 +321,9 @@
       width: 56px;
       height: 56px;
       border-radius: 50%;
-      border: 1px solid var(--paper);
-      background: transparent;
-      color: var(--paper);
+      border: 1px solid var(--line-2);
+      background: var(--panel-2);
+      color: var(--ink);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -289,7 +331,7 @@
       transition: all 140ms ease;
       flex-shrink: 0;
     }
-    .transport:hover:not(:disabled) { background: var(--paper); color: var(--ink); }
+    .transport:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 12px rgba(255, 201, 58, 0.35); }
     .transport:disabled { opacity: 0.35; cursor: not-allowed; }
 
     /* Progress tick bar */
@@ -299,17 +341,18 @@
       height: 3px;
       background: var(--rule);
     }
-    .tick.filled { background: var(--ink); }
-    .tick.current { background: var(--ink); opacity: 0.5; }
+    .tick.filled { background: var(--accent); }
+    .tick.current { background: var(--accent); opacity: 0.5; }
 
     /* Card */
     .card {
-      background: var(--paper);
+      background: var(--panel);
       border: 1px solid var(--rule);
     }
     .card-dark {
-      background: var(--ink);
-      color: var(--paper);
+      background: var(--panel-2);
+      color: var(--ink);
+      border: 1px solid var(--rule);
     }
 
     /* Rule lines */
@@ -317,7 +360,7 @@
 
     /* Timer indicator */
     .timer {
-      font-family: 'JetBrains Mono', monospace;
+      font-family: 'Geist Mono', monospace;
       font-weight: 500;
       font-size: 12px;
       letter-spacing: 0.05em;
@@ -326,7 +369,7 @@
     /* Week picker — curriculum surface */
     .week-card {
       border: 1px solid var(--rule);
-      background: var(--paper);
+      background: var(--panel);
       padding: 18px;
       text-align: left;
       cursor: pointer;
@@ -336,34 +379,36 @@
       gap: 6px;
       min-height: 112px;
     }
-    .week-card:hover { border-color: var(--ink); }
+    .week-card:hover { border-color: var(--ink-3); background: var(--panel-2); }
     .week-card.active {
-      background: var(--ink);
-      color: var(--paper);
-      border-color: var(--ink);
+      background: var(--panel-2);
+      color: var(--ink);
+      border-color: var(--accent);
+      box-shadow: 0 0 12px rgba(255, 201, 58, 0.18);
     }
     .week-card.complete {
-      border-color: var(--ink);
+      border-color: var(--line-2);
     }
     .week-card.complete::before {
       content: '';
       display: block;
       width: 8px;
       height: 8px;
-      background: var(--ink);
+      background: var(--accent);
       border-radius: 50%;
       margin-bottom: 2px;
+      box-shadow: 0 0 6px rgba(255, 201, 58, 0.6);
     }
-    .week-card.active.complete::before { background: var(--paper); }
-    .week-card .num { font-family: 'Poppins', sans-serif; font-weight: 700; font-style: italic; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
-    .week-card .title { font-family: 'Poppins', sans-serif; font-weight: 600; font-size: 15px; line-height: 1.25; letter-spacing: -0.01em; }
-    .week-card .meta { font-family: 'JetBrains Mono', monospace; font-size: 10px; letter-spacing: 0.05em; opacity: 0.7; margin-top: auto; }
+    .week-card.active.complete::before { background: var(--accent); }
+    .week-card .num { font-family: 'Bricolage Grotesque', 'Geist', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
+    .week-card .title { font-family: 'Bricolage Grotesque', 'Geist', sans-serif; font-weight: 700; font-size: 15px; line-height: 1.25; letter-spacing: -0.01em; }
+    .week-card .meta { font-family: 'Geist Mono', monospace; font-size: 10px; letter-spacing: 0.05em; opacity: 0.7; margin-top: auto; }
 
     /* Overlay */
     .overlay {
       position: fixed;
       inset: 0;
-      background: rgba(10, 10, 10, 0.92);
+      background: rgba(8, 8, 9, 0.94);
       display: flex;
       align-items: center;
       justify-content: center;
@@ -378,7 +423,22 @@
     }
     .fade-up { animation: fadeUp 200ms ease-out; }
 
-    /* Grain texture overlay on dark sections for depth */
+    /* Answer-reveal feedback */
+    @keyframes correctGlow {
+      0% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+      35% { box-shadow: 0 0 22px 2px rgba(74, 222, 128, 0.5); }
+      100% { box-shadow: 0 0 0 0 rgba(74, 222, 128, 0); }
+    }
+    @keyframes wrongFlash {
+      0%, 100% { transform: translateX(0); box-shadow: 0 0 0 0 rgba(255, 70, 48, 0); }
+      15% { transform: translateX(-4px); box-shadow: 0 0 16px 1px rgba(255, 70, 48, 0.45); }
+      45% { transform: translateX(3px); }
+      70% { transform: translateX(-2px); }
+    }
+    .feedback-correct { animation: correctGlow 900ms ease-out; border-color: var(--green) !important; }
+    .feedback-wrong { animation: wrongFlash 440ms ease-out; border-color: var(--hot) !important; }
+
+    /* Grain texture overlay for panel depth */
     .grain {
       position: relative;
     }
@@ -388,8 +448,8 @@
       inset: 0;
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='120' height='120'><filter id='n'><feTurbulence baseFrequency='0.9' numOctaves='2'/></filter><rect width='100%' height='100%' filter='url(%23n)' opacity='0.08'/></svg>");
       pointer-events: none;
-      mix-blend-mode: overlay;
-      opacity: 0.4;
+      mix-blend-mode: soft-light;
+      opacity: 0.5;
     }
 
     /* Mobile-specific panel */
@@ -399,7 +459,7 @@
       z-index: 900;
       display: flex;
       flex-direction: column;
-      background: var(--paper);
+      background: var(--panel);
       transform: translateX(100%);
       transition: transform 240ms ease;
     }
@@ -407,7 +467,7 @@
 
     /* Small helpers */
     .eyebrow {
-      font-family: 'Poppins', sans-serif;
+      font-family: 'Geist Mono', monospace;
       font-weight: 600;
       font-size: 10px;
       letter-spacing: 0.16em;
@@ -420,8 +480,13 @@
     }
     .divider-dark {
       height: 1px;
-      background: rgba(250, 250, 247, 0.15);
+      background: var(--rule);
     }
+
+    /* EQ-curve visualization */
+    .eq-grid-line { stroke: var(--rule); stroke-width: 1; }
+    .eq-zero-line { stroke: var(--line-2); stroke-width: 1; stroke-dasharray: 3 3; }
+    .eq-axis-label { fill: var(--ink-3); font-family: 'Geist Mono', monospace; font-size: 9px; }
   </style>
 </head>
 <body>
@@ -789,7 +854,7 @@
     function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
       return (
         <div className="overlay">
-          <div className="bg-paper text-ink max-w-md w-full p-8" style={{ border: '1px solid var(--paper)' }}>
+          <div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: '1px solid var(--rule)' }}>
             <Wordmark />
             <div className="divider mt-6 mb-6"></div>
 
@@ -882,7 +947,7 @@
                   </>
                 ) : (
                   <>
-                    <div className="text-xs font-mono py-4 px-3 mb-2" style={{ background: 'var(--ink)', color: 'var(--paper)' }}>
+                    <div className="text-xs font-mono py-4 px-3 mb-2" style={{ background: 'var(--accent)', color: '#0d0d0e' }}>
                       WEEK {data.week} COMPLETE
                     </div>
                     <button className="btn btn-solid w-full" onClick={onClose}>Continue Training</button>
@@ -1143,9 +1208,9 @@
                           className="btn btn-ghost"
                           style={{
                             padding: '6px 12px', fontSize: '11px',
-                            background: active ? 'var(--ink)' : 'transparent',
-                            color: active ? 'var(--paper)' : 'var(--ink)',
-                            borderColor: 'var(--ink)'
+                            background: active ? 'var(--accent)' : 'transparent',
+                            color: active ? '#0d0d0e' : 'var(--ink)',
+                            borderColor: active ? 'var(--accent)' : 'var(--line-2)'
                           }}
                           onClick={() => {
                             const next = active ? pool.filter(x => x !== g) : [...pool, g].sort((a, b) => a - b);
@@ -1341,9 +1406,9 @@
                         }}
                         className="flex items-center gap-2 px-3 py-2 border text-xs font-display font-semibold uppercase tracking-wide transition-colors"
                         style={{
-                          borderColor: isActive ? 'var(--ink)' : 'var(--rule)',
-                          background: isActive ? 'var(--ink)' : 'transparent',
-                          color: isActive ? 'var(--paper)' : 'var(--ink)'
+                          borderColor: isActive ? 'var(--accent)' : 'var(--rule)',
+                          background: isActive ? 'var(--accent)' : 'transparent',
+                          color: isActive ? '#0d0d0e' : 'var(--ink)'
                         }}
                       >
                         {pill.locked && (
@@ -1397,7 +1462,7 @@
                         <div
                           key={i}
                           className="flex items-stretch border rule hover:border-ink transition-colors"
-                          style={isCurrent ? { borderColor: 'var(--ink)', background: '#f0eee8' } : {}}
+                          style={isCurrent ? { borderColor: 'var(--accent)', background: 'var(--panel-3)' } : {}}
                         >
                           {/* Main row — click to load task */}
                           <button
@@ -1414,7 +1479,7 @@
                               <div
                                 className="flex-shrink-0 w-2.5 h-2.5 rounded-full"
                                 style={{
-                                  background: isDone ? 'var(--ink)' : 'transparent',
+                                  background: isDone ? 'var(--accent)' : 'transparent',
                                   border: isDone ? 'none' : '1px solid var(--rule)'
                                 }}
                                 aria-label={isDone ? 'Completed' : 'Not completed'}
@@ -1429,7 +1494,7 @@
                                 <div className="font-mono text-sm">{entry.score}%</div>
                               )}
                               {isCurrent && (
-                                <div className="font-mono text-[10px] uppercase tracking-wider bg-ink text-paper px-2 py-1">Current</div>
+                                <div className="font-mono text-[10px] uppercase tracking-wider bg-accent text-paper px-2 py-1">Current</div>
                               )}
                             </div>
                           </button>
@@ -1522,11 +1587,11 @@
               {/* ========== LOCKED LEVEL: COMING SOON ========== */}
               {viewLevelLocked && lockedLevel && lockedLevel.status === 'coming_soon' && (
                 <div className="card-dark p-6" style={{ position: 'relative' }}>
-                  <div className="eyebrow mb-2" style={{ color: 'rgba(250,250,247,0.55)' }}>Coming Soon</div>
+                  <div className="eyebrow mb-2" style={{ color: 'var(--ink-3)' }}>Coming Soon</div>
                   <div className="font-display font-bold italic text-2xl leading-tight mb-3">
                     {lockedLevel.name}
                   </div>
-                  <p className="text-sm leading-relaxed" style={{ color: 'rgba(250,250,247,0.85)' }}>
+                  <p className="text-sm leading-relaxed" style={{ color: 'var(--ink)' }}>
                     Audio University releases new training levels regularly. Members get every level as it ships.
                   </p>
                 </div>
@@ -1541,6 +1606,78 @@
     /* ============================================================
        MAIN APP
        ============================================================ */
+
+    /* ---------- EQ-curve visualization ----------
+       Pure RBJ peaking-filter magnitude, computed analytically so the curve
+       matches the answer/learn data — not the live, time-multiplexed nodes. */
+    function peakingMagnitudeDb(f, f0, gainDb, Q, fs) {
+      if (!gainDb) return 0;
+      const A = Math.pow(10, gainDb / 40);
+      const w0 = 2 * Math.PI * f0 / fs;
+      const cw0 = Math.cos(w0);
+      const alpha = Math.sin(w0) / (2 * Q);
+      const b0 = 1 + alpha * A, b1 = -2 * cw0, b2 = 1 - alpha * A;
+      const a0 = 1 + alpha / A, a1 = -2 * cw0, a2 = 1 - alpha / A;
+      const w = 2 * Math.PI * f / fs;
+      const cw = Math.cos(w), c2w = Math.cos(2 * w);
+      const num = b0*b0 + b1*b1 + b2*b2 + 2*(b0*b1 + b1*b2)*cw + 2*b0*b2*c2w;
+      const den = a0*a0 + a1*a1 + a2*a2 + 2*(a0*a1 + a1*a2)*cw + 2*a0*a2*c2w;
+      return 10 * Math.log10(num / den);
+    }
+
+    function EqCurve({ filters = [], guess = null, fs = 48000 }) {
+      const W = 900, H = 190;
+      const padL = 14, padR = 14, padT = 14, padB = 22;
+      const plotW = W - padL - padR, plotH = H - padT - padB;
+      const fMin = 20, fMax = 20000, dbMax = 15;
+      const lgMin = Math.log10(fMin), lgSpan = Math.log10(fMax) - lgMin;
+      const lx = (f) => padL + (Math.log10(f) - lgMin) / lgSpan * plotW;
+      const ly = (db) => padT + plotH / 2 - (Math.max(-dbMax, Math.min(dbMax, db)) / dbMax) * (plotH / 2);
+      const sumDb = (set, f) => (set || []).reduce((s, flt) =>
+        s + peakingMagnitudeDb(f, flt.freq, (flt.direction === 'cut' ? -1 : 1) * (flt.gainDb || 0), DEFAULT_Q, fs), 0);
+      const N = 160;
+      const buildPath = (set) => {
+        let d = '';
+        for (let i = 0; i <= N; i++) {
+          const f = fMin * Math.pow(fMax / fMin, i / N);
+          d += (i ? 'L' : 'M') + lx(f).toFixed(1) + ' ' + ly(sumDb(set, f)).toFixed(1) + ' ';
+        }
+        return d.trim();
+      };
+      const gridFreqs = [63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+      return (
+        <svg className="eq-curve" viewBox={`0 0 ${W} ${H}`} style={{ width: '100%', height: 'auto', display: 'block' }} role="img" aria-label="EQ frequency response">
+          {gridFreqs.map(f => <line key={'g' + f} className="eq-grid-line" x1={lx(f)} y1={padT} x2={lx(f)} y2={padT + plotH} />)}
+          {[-12, -6, 6, 12].map(db => <line key={'h' + db} className="eq-grid-line" x1={padL} y1={ly(db)} x2={padL + plotW} y2={ly(db)} opacity="0.45" />)}
+          <line className="eq-zero-line" x1={padL} y1={ly(0)} x2={padL + plotW} y2={ly(0)} />
+          {guess && guess.length > 0 && (
+            <path d={buildPath(guess)} fill="none" stroke="var(--ink-3)" strokeWidth="2" strokeDasharray="5 4" vectorEffect="non-scaling-stroke" />
+          )}
+          <path d={buildPath(filters)} fill="none" stroke="var(--accent)" strokeWidth="2.5" vectorEffect="non-scaling-stroke" />
+          {gridFreqs.map(f => <text key={'t' + f} className="eq-axis-label" x={lx(f)} y={H - 7} textAnchor="middle">{bandLabel(f)}</text>)}
+        </svg>
+      );
+    }
+
+    /* Horizontal LED accuracy meter — colour shifts green/amber/red by performance. */
+    function AccuracyMeter({ value = 0, segments = 16 }) {
+      const v = Math.max(0, Math.min(1, value));
+      const lit = Math.round(v * segments);
+      const color = v >= 0.8 ? 'var(--green)' : v >= 0.5 ? 'var(--amber)' : 'var(--hot)';
+      return (
+        <div style={{ display: 'flex', gap: 2, alignItems: 'stretch', height: 10 }}>
+          {Array.from({ length: segments }).map((_, i) => {
+            const on = i < lit;
+            return <div key={i} style={{
+              flex: 1, borderRadius: 1,
+              background: on ? color : 'var(--panel-3)',
+              boxShadow: on ? `0 0 4px ${color}` : 'inset 0 0 2px #000',
+              opacity: on ? 1 : 0.5,
+            }} />;
+          })}
+        </div>
+      );
+    }
 
     function App() {
       /* ---------- Audio state ---------- */
@@ -1637,6 +1774,8 @@
       const [roundCorrect, setRoundCorrect] = useState(0);
       const [sessionCorrect, setSessionCorrect] = useState(0);
       const [sessionTotal, setSessionTotal] = useState(0);
+      const [streak, setStreak] = useState(0);
+      const [bestStreak, setBestStreak] = useState(0);
 
       /* Per-week progress persisted to localStorage: { [weekNum]: { [taskIdx]: accuracy } } */
       const [progress, setProgress] = useState(() => migrateProgress(STORAGE.get("earTrainingProgress", {})));
@@ -2401,6 +2540,9 @@
         if (correct) {
           setRoundCorrect(rc => rc + 1);
           setSessionCorrect(sc => sc + 1);
+          setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; });
+        } else {
+          setStreak(0);
         }
 
         // Mistake review: capture the user's guess so they can A/B against the actual filter.
@@ -2467,6 +2609,8 @@
         setRoundCorrect(0);
         setSessionCorrect(0);
         setSessionTotal(0);
+        setStreak(0);
+        setBestStreak(0);
       };
 
       const loadNextTask = () => {
@@ -2892,12 +3036,18 @@
                         {qInRound}<span className="text-mute">/{questionsPerRound}</span>
                       </div>
                     </div>
+                    {streak >= 2 && (
+                      <div className="text-right">
+                        <div className="eyebrow mb-1">Streak</div>
+                        <div className="font-mono text-sm" style={{ color: 'var(--accent)' }}>{streak}</div>
+                      </div>
+                    )}
                     <div className="text-right hidden sm:block">
                       <div className="eyebrow mb-1">Score</div>
                       <div className="font-mono text-sm">{percent(sessionCorrect, sessionTotal)}</div>
                     </div>
                     {timeRemaining !== null && !showAnswer && (
-                      <div className={`px-3 py-1 font-mono text-xs ${timeRemaining <= 10 ? 'bg-ink text-paper' : 'border border-ink'}`}>
+                      <div className={`px-3 py-1 font-mono text-xs ${timeRemaining <= 10 ? 'border border-hot text-hot' : 'border border-line-2 text-ink-2'}`}>
                         {timeRemaining}s
                       </div>
                     )}
@@ -2982,7 +3132,7 @@
                   {/* Memory mode hint — quiet inline note */}
                   {mode === "Return to Flat (Memory)" && round && (
                     <div className="relative z-10 mt-4 pt-4 divider-dark">
-                      <div className="text-xs text-paper/70 leading-relaxed">
+                      <div className="text-xs text-ink-2 leading-relaxed">
                         {hasLeftChannelA
                           ? "A is locked. Work from memory — apply the opposite EQ on C to cancel what you heard on B."
                           : "Listen to A carefully. Once you leave A, you can't return."}
@@ -3015,7 +3165,7 @@
                 {/* Answer reveal */}
                 {showAnswer && round && (
                   <section className="mb-6 fade-up">
-                    <div className="card p-5 border-ink" style={{ borderColor: 'var(--ink)' }}>
+                    <div className={`card p-5 ${isCorrect ? 'feedback-correct' : 'feedback-wrong'}`} style={{ borderColor: 'var(--rule)' }}>
                       {/* Multi-filter reveal: per-slot list with ✓/✗ */}
                       {Array.isArray(round.filters) && round.filters.length > 1 ? (
                         <>
@@ -3083,6 +3233,27 @@
                         </>
                       )}
 
+                      {/* EQ-curve: actual response (gold), with the user's guess overlaid (single-filter, non-RTF) */}
+                      {(() => {
+                        const multi = Array.isArray(round.filters) && round.filters.length > 1;
+                        const curveFilters = multi ? round.filters : [{ freq: round.freq, direction: round.direction, gainDb }];
+                        const gf = (!multi && !isReturnToFlatMode(mode)) ? (mode === "Identify" ? guessFreq : answerFreq) : null;
+                        const gd = mode === "Identify" ? (guessDir || round.direction) : (answerDir || round.direction);
+                        const guess = gf ? [{ freq: gf, direction: gd, gainDb }] : null;
+                        return (
+                          <div className="pt-4 mt-4 border-t rule">
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="eyebrow">Frequency Response</div>
+                              <div className="flex items-center gap-3 font-mono text-[10px]">
+                                <span style={{ color: 'var(--accent)' }}>● Actual</span>
+                                {guess && <span style={{ color: 'var(--ink-3)' }}>● Your guess</span>}
+                              </div>
+                            </div>
+                            <EqCurve filters={curveFilters} guess={guess} />
+                          </div>
+                        );
+                      })()}
+
                       {/* Mistake review — A/B between actual and guess (single-filter only) */}
                       {reviewState.active && reviewState.guessFreq && (!round.filters || round.filters.length <= 1) && (
                         <div className="pt-4 mt-4 border-t rule">
@@ -3093,9 +3264,9 @@
                               onClick={() => { setReviewState(s => ({ ...s, listening: 'actual' })); setListenCh("B"); }}
                               className="p-3 border text-left transition-colors"
                               style={{
-                                borderColor: reviewState.listening === 'actual' ? 'var(--ink)' : 'var(--rule)',
-                                background: reviewState.listening === 'actual' ? 'var(--ink)' : 'transparent',
-                                color: reviewState.listening === 'actual' ? 'var(--paper)' : 'var(--ink)'
+                                borderColor: reviewState.listening === 'actual' ? 'var(--accent)' : 'var(--rule)',
+                                background: reviewState.listening === 'actual' ? 'var(--accent)' : 'transparent',
+                                color: reviewState.listening === 'actual' ? '#0d0d0e' : 'var(--ink)'
                               }}
                             >
                               <div className="font-mono text-[10px] uppercase tracking-wider opacity-70 mb-1">Actual</div>
@@ -3108,9 +3279,9 @@
                               onClick={() => { setReviewState(s => ({ ...s, listening: 'guess' })); setListenCh("B"); }}
                               className="p-3 border text-left transition-colors"
                               style={{
-                                borderColor: reviewState.listening === 'guess' ? 'var(--ink)' : 'var(--rule)',
-                                background: reviewState.listening === 'guess' ? 'var(--ink)' : 'transparent',
-                                color: reviewState.listening === 'guess' ? 'var(--paper)' : 'var(--ink)'
+                                borderColor: reviewState.listening === 'guess' ? 'var(--accent)' : 'var(--rule)',
+                                background: reviewState.listening === 'guess' ? 'var(--accent)' : 'transparent',
+                                color: reviewState.listening === 'guess' ? '#0d0d0e' : 'var(--ink)'
                               }}
                             >
                               <div className="font-mono text-[10px] uppercase tracking-wider opacity-70 mb-1">Your guess</div>
@@ -3156,7 +3327,7 @@
                       const showDirection = (gainOptions && gainOptions.length > 0) || eqMode === "both";
                       const showGain = gainOptions && gainOptions.length > 1;
                       return (
-                        <div key={slotIdx} className="card p-4 sm:p-5" style={{ borderColor: 'var(--ink)' }}>
+                        <div key={slotIdx} className="card p-4 sm:p-5" style={{ borderColor: 'var(--rule)' }}>
                           <div className="flex items-baseline justify-between mb-3">
                             <div className="font-display font-bold italic text-base">Filter {slotIdx + 1}</div>
                             <div className="font-mono text-xs text-mute">
@@ -3226,6 +3397,16 @@
                 )}
 
                 {/* SINGLE-filter Frequency grid (existing) — hidden when slot-picker is in use */}
+                {isLearnMode && round && (
+                  <section className="mb-6 fade-up">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="eyebrow">Frequency Response</div>
+                      <div className="font-mono text-[10px] text-mute">{bandLabel(round.freq)} Hz · {round.direction} · {gainDb} dB</div>
+                    </div>
+                    <EqCurve filters={[{ freq: round.freq, direction: round.direction, gainDb }]} />
+                  </section>
+                )}
+
                 {((round && !showAnswer && (!round.filters || round.filters.length <= 1) && (!gainOptions || gainOptions.length <= 1)) || isLearnMode) && (
                   <section className="mb-6 fade-up">
                     <div className="flex items-center justify-between mb-3">
@@ -3342,11 +3523,11 @@
                 {isLearnMode && (
                   <section className="mb-6">
                     <div className="card-dark p-4 sm:p-5" style={{ position: 'relative' }}>
-                      <div className="eyebrow mb-1" style={{ color: 'rgba(250,250,247,0.55)' }}>Learn Mode</div>
-                      <div className="font-display font-semibold text-base mb-1" style={{ color: 'var(--paper)' }}>
+                      <div className="eyebrow mb-1" style={{ color: 'var(--ink-3)' }}>Learn Mode</div>
+                      <div className="font-display font-semibold text-base mb-1" style={{ color: 'var(--ink)' }}>
                         Pick a frequency. Listen with the label visible.
                       </div>
-                      <p className="text-xs leading-relaxed" style={{ color: 'rgba(250,250,247,0.75)' }}>
+                      <p className="text-xs leading-relaxed" style={{ color: 'var(--ink-2)' }}>
                         Toggle Channel A (dry) and Channel B (with the EQ applied) to train your ear on what each band sounds like.
                         Switch back to Practice when you're ready to be tested.
                       </p>
@@ -3357,10 +3538,18 @@
                 {/* Performance metrics — hidden in Learn (no scoring) */}
                 {!isLearnMode && (
                 <section className="card p-5 sm:p-6">
-                  <div className="eyebrow mb-4">Session</div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-5 sm:gap-8">
+                  <div className="flex items-center justify-between mb-4">
+                    <div className="eyebrow">Session</div>
+                    {streak >= 3 && (
+                      <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
+                        Streak · {streak}
+                      </div>
+                    )}
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-5 gap-5 sm:gap-8">
                     <Metric label="Round" value={roundNum} />
                     <Metric label="Question" value={`${qInRound}/${questionsPerRound}`} />
+                    <Metric label="Streak" value={streak} sub={bestStreak > 0 ? `best ${bestStreak}` : null} />
                     <Metric
                       label="Round Score"
                       value={qInRound > 0 ? percent(roundCorrect, qInRound) : "—"}
@@ -3370,6 +3559,13 @@
                       value={percent(sessionCorrect, sessionTotal)}
                       sub={sessionTotal > 0 ? `${sessionCorrect} of ${sessionTotal}` : null}
                     />
+                  </div>
+                  <div className="mt-5">
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="eyebrow">Accuracy</div>
+                      <div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div>
+                    </div>
+                    <AccuracyMeter value={sessionTotal > 0 ? sessionCorrect / sessionTotal : 0} />
                   </div>
                 </section>
                 )}
@@ -3392,7 +3588,7 @@
           <footer className="border-t rule mt-auto">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
               <div className="flex items-center gap-3 text-xs font-mono text-mute">
-                <span className={`w-2 h-2 rounded-full ${audioReady ? 'bg-ink' : 'bg-mute'}`}></span>
+                <span className={`w-2 h-2 rounded-full ${audioReady ? 'bg-green' : 'bg-mute'}`}></span>
                 <span>{audioReady ? (isPlaying ? "Playing" : "Ready") : "Not ready"}</span>
                 <span className="opacity-40">·</span>
                 <span>{audioSource === 'noise' ? 'Pink Noise' : customFileName || 'Custom'}</span>
@@ -3606,9 +3802,9 @@
                               disabled={!audioReady || isLoadingFile}
                               className="p-3 border text-left transition-colors"
                               style={{
-                                borderColor: isActive ? 'var(--ink)' : 'var(--rule)',
-                                background: isActive ? 'var(--ink)' : 'transparent',
-                                color: isActive ? 'var(--paper)' : 'var(--ink)'
+                                borderColor: isActive ? 'var(--accent)' : 'var(--rule)',
+                                background: isActive ? 'var(--accent)' : 'transparent',
+                                color: isActive ? '#0d0d0e' : 'var(--ink)'
                               }}
                             >
                               <div className="font-display font-semibold text-sm">{s.name}</div>

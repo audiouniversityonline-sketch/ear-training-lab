@@ -8,6 +8,7 @@ An interactive EQ ear-training tool for [Audio University](https://www.youtube.c
 - **`full.html`** — the **paid** app: full 15-week Level 1 curriculum, manual practice, multi-filter rounds. Loads `curriculum.json`.
 - **`curriculum.json` / `curriculum-free.json`** — the task curricula. **These are the files to edit when changing or adding tasks.** Schema: `{ schemaVersion, levels: [...], lockedLevels: [...] }`. Each app has an inline fallback if the fetch fails.
 - **`sources/`** — optional curated WAV library for the full app's Source Material picker (drop in WAVs named per `sources/README.md`). The default pink-noise source and custom uploads work without these.
+- **`design-system.css`** — the canonical Audio University interactive-tool design tokens + component recipes, shared across the training-tool suite. The apps stay self-contained and copy from this; treat it as the source of truth.
 - **`HANDOFF.md`** — full project state and history for a fresh session.
 
 ## Hosting
@@ -32,3 +33,4 @@ Default training audio is pink noise synthesized in the browser with the Web Aud
 Releases are tagged on GitHub; any prior version is restorable from the Releases page.
 
 - **`v1.0-light`** — the original light "paper & ink" theme.
+- **`v2.0-dark`** — the dark "pro-console" theme matching the Troubleshooting Lab, plus a live EQ-curve display, streak + accuracy meter, and richer answer feedback (current).
