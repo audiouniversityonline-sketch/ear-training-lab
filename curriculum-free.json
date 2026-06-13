@@ -1,0 +1,24 @@
+{
+  "schemaVersion": 1,
+  "levels": [
+    {
+      "id": 1,
+      "name": "Free Sample",
+      "subtitle": "Three matching tasks across mids, lows, and highs",
+      "weeks": [
+        { "week": 1, "lessonTitle": "Free Sample", "circleLessonId": null,
+          "tasks": [
+            { "name": "Sample 1 — Matching mids +12", "mode": "Matching", "freqSet": "mids_octaves", "bandwidth": "1.0_oct", "gainDb": 12, "direction": "boost", "rounds": 10 },
+            { "name": "Sample 2 — Matching lows +12", "mode": "Matching", "freqSet": "lows_octaves", "bandwidth": "1.0_oct", "gainDb": 12, "direction": "boost", "rounds": 10 },
+            { "name": "Sample 3 — Matching highs +12", "mode": "Matching", "freqSet": "highs_octaves", "bandwidth": "1.0_oct", "gainDb": 12, "direction": "boost", "rounds": 10 }
+          ]
+        }
+      ]
+    }
+  ],
+  "lockedLevels": [
+    { "id": 1, "name": "Foundations", "subtitle": "15-week curriculum, octave-band boost and cut training", "weekCount": 15, "status": "members" },
+    { "id": 2, "name": "Level Two", "subtitle": "Coming soon", "weekCount": null, "status": "coming_soon" },
+    { "id": 3, "name": "Level Three", "subtitle": "Coming soon", "weekCount": null, "status": "coming_soon" }
+  ]
+}
