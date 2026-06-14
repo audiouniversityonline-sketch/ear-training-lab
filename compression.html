@@ -762,6 +762,19 @@
       for (let i = 0; i < n; i++) { const p = i / (n - 1), v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: clampMakeup(dryRms / (bufferRms(wet) || 1e-6)) }); }
       return lk;
     }
+    // Lookup at explicit positions — lets stepped Match vary its notch values per round.
+    async function buildLookupAt(buf, dryRms, control, positions) {
+      const lk = [];
+      for (let i = 0; i < positions.length; i++) { const p = positions[i], v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: clampMakeup(dryRms / (bufferRms(wet) || 1e-6)) }); }
+      return lk;
+    }
+    // Random, sorted notch positions with a strong gap — different values every round.
+    function pickNotchPositions(N) {
+      if (N <= 2) { const lo = 0.05 + Math.random() * 0.23, hi = 0.72 + Math.random() * 0.23; return [lo, hi]; }
+      const start = Math.random() * 0.15, end = 0.85 + Math.random() * 0.15, step = (end - start) / (N - 1), jit = step * 0.2, pos = [];
+      for (let i = 0; i < N; i++) { let p = start + i * step; if (i > 0 && i < N - 1) p += (Math.random() * 2 - 1) * jit; pos.push(Math.max(0, Math.min(1, p))); }
+      pos.sort((a, b) => a - b); return pos;
+    }
 
     /* ---------- scope + meters ---------- */
     function GrScope({ envA, envB, envMax }) {
@@ -918,7 +931,7 @@
             const N = steps;
             const targetIndex = Math.floor(Math.random() * N);
             const startIndex = targetIndex < N / 2 ? N - 1 : 0;
-            const lookup = await buildLookupFor(buf, dryRms, control, N), notches = lookup.map(x => x.v);
+            const lookup = await buildLookupAt(buf, dryRms, control, pickNotchPositions(N)), notches = lookup.map(x => x.v);
             const wetT = await renderWet(buf, { ...BASE, [control]: notches[targetIndex] }); const envTarget = envelopeOf(wetT, ENV_POINTS, lookup[targetIndex].makeup);
             return { mode: "match", control, stepped: true, steps: N, notches, targetIndex, startIndex, lookup, target: notches[targetIndex], envTarget, prompt: "Match A's " + control + " on B" };
           }
