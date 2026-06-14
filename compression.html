@@ -626,7 +626,8 @@
       release:   { min: 0.03, max: 0.6, log: true, fmt: (v) => Math.round(v * 1000) + " ms" },
     };
     const MATCH_TOL = { threshold: { type: "lin", base: 2.5 }, ratio: { type: "log", base: 1.4 }, attack: { type: "log", base: 1.7 }, release: { type: "log", base: 1.7 } };
-    const DIFF_TOLMUL = { easy: 1.6, medium: 1.0, hard: 0.65 };
+    const DIFF_TOLMUL = { easy: 1.6, medium: 1.0, hard: 1.0 };
+    const MATCH_STEPS = { easy: 2, medium: 4, hard: 0 }; // 0 = freehand slider; >=2 = stepped notches
     const MATCH_TIP = {
       threshold: "Threshold sets how much of the signal crosses into compression. Lower catches more.",
       ratio: "Ratio sets how hard it clamps above the threshold. Higher is more aggressive.",
@@ -653,7 +654,7 @@
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is dry, one is compressed, matched in loudness. Pick the compressed one." },
       time: { label: "Attack / Release", prompt: "", blurb: "A and B share the same compression except one time constant. Tell which way B moved." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one parameter moved. Name the parameter." },
-      match: { label: "Match", prompt: "", blurb: "A is the target. Drive the control until B (Yours) matches it by ear. Easy gives you a few set steps; harder is freehand." },
+      match: { label: "Match", prompt: "", blurb: "A is the target. Match it on B. Easy is a two-way pick, Medium gives more steps, Hard is freehand." },
     };
     const MODE_ORDER = ["detect", "time", "whatChanged", "match"];
 
@@ -912,12 +913,14 @@
         const cfg = configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryRms = dryRmsRef.current;
         if (m === "match") {
           const control = cfg.matchControl === "random" ? ["attack", "release", "threshold", "ratio"][Math.floor(Math.random() * 4)] : cfg.matchControl;
-          if (diff === "easy") {
-            const N = 5, targetIndex = 1 + Math.floor(Math.random() * (N - 2));
-            let startIndex; do { startIndex = Math.floor(Math.random() * N); } while (Math.abs(startIndex - targetIndex) < 2);
+          const steps = MATCH_STEPS[diff];
+          if (steps >= 2) {
+            const N = steps;
+            const targetIndex = Math.floor(Math.random() * N);
+            const startIndex = targetIndex < N / 2 ? N - 1 : 0;
             const lookup = await buildLookupFor(buf, dryRms, control, N), notches = lookup.map(x => x.v);
             const wetT = await renderWet(buf, { ...BASE, [control]: notches[targetIndex] }); const envTarget = envelopeOf(wetT, ENV_POINTS, lookup[targetIndex].makeup);
-            return { mode: "match", control, stepped: true, notches, targetIndex, startIndex, lookup, target: notches[targetIndex], envTarget, prompt: "Match A's " + control + " on B" };
+            return { mode: "match", control, stepped: true, steps: N, notches, targetIndex, startIndex, lookup, target: notches[targetIndex], envTarget, prompt: "Match A's " + control + " on B" };
           }
           const targetPos = 0.2 + Math.random() * 0.6, target = ctrlValueAt(control, targetPos);
           const off = 0.32 + Math.random() * 0.2, dir = Math.random() < 0.5 ? -1 : 1;
@@ -980,7 +983,7 @@
       const submitMatch = async () => {
         if (!round || round.mode !== "match" || showAnswer || building) return;
         let value, target, within, tight;
-        if (round.stepped) { value = round.notches[matchIndex]; target = round.notches[round.targetIndex]; const diff = Math.abs(matchIndex - round.targetIndex); within = diff <= 1; tight = diff === 0; }
+        if (round.stepped) { value = round.notches[matchIndex]; target = round.notches[round.targetIndex]; const diff = Math.abs(matchIndex - round.targetIndex); within = round.steps <= 2 ? diff === 0 : diff <= 1; tight = diff === 0; }
         else { value = ctrlValueAt(round.control, matchPos); target = round.target; const spec = MATCH_TOL[round.control]; if (spec.type === "lin") { const err = Math.abs(value - target); within = err <= round.tol; tight = err <= round.tol * 0.5; } else { const f = Math.max(value / target, target / value); within = f <= round.tol; tight = f <= 1 + (round.tol - 1) * 0.5; } }
         setSessionTotal(n => n + 1);
         if (within) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
@@ -1224,7 +1227,7 @@
                   <label className="btn btn-ghost w-full mt-3" style={{ cursor: "pointer" }}>Upload WAV loop<input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files && e.target.files[0]) { onUploadFile(e.target.files[0]); setShowDrawer(false); } }} /></label>
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
-                <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Easy Match gives a few set steps. Medium and Hard are freehand with tighter tolerance.</p></div>
+                <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Easy Match is a two-way pick, Medium gives four steps, Hard is freehand.</p></div>
                 <div><div className="eyebrow mb-2">What changed: options</div><Seg options={[{ value: 2, label: "Attack / Release" }, { value: 4, label: "All four" }]} value={config.whatChangedPool} onChange={(v) => setCfg({ whatChangedPool: v })} disabled={!audioReady} /></div>
                 <div><div className="eyebrow mb-2">Match: control</div><Seg options={[{ value: "random", label: "Random" }, { value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchControl} onChange={(v) => setCfg({ matchControl: v })} disabled={!audioReady} /></div>
               </div>
