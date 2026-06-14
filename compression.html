@@ -839,7 +839,7 @@
     function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
       return (
         <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
-          <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Compression Trainer</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Ear Training Lab</div></div></div>
+          <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression Trainer</div></div></div>
           <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Both channels are matched in loudness, so the only tell is the sound. Best on monitors or headphones.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
           <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Start"}</button>
@@ -1169,7 +1169,7 @@
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="flex items-center" style={{ gap: 12 }}>
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block", flexShrink: 0 }} />
-                <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Compression Trainer</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Ear Training Lab · Prototype</div></div>
+                <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression Trainer · Prototype</div></div>
               </div>
               <div className="flex items-center gap-2">
                 <a href="full.html" className="btn btn-ghost" aria-label="EQ Trainer">EQ</a>
@@ -1178,7 +1178,7 @@
                   <button className={area === "practice" ? "active" : ""} onClick={goPractice} disabled={!audioReady}>Practice</button>
                   <button className={area === "learn" ? "active" : ""} onClick={enterLearn} disabled={!audioReady}>Learn</button>
                 </div>
-                <button onClick={() => setShowDrawer(true)} className="btn btn-ghost" aria-label="Custom exercise"><GearGlyph /></button>
+                <button onClick={() => setShowDrawer(true)} className="btn btn-ghost" aria-label="Settings"><GearGlyph /></button>
               </div>
             </div>
           </header>
@@ -1193,7 +1193,7 @@
                   <p className="text-xs text-ink-2 leading-relaxed mb-3">{area === "learn" ? "Sweep any control against the dry reference and hear its full range. No scoring." : area === "levels" ? (activeLevel ? levelMeta(activeLevel) : "Work the levels in order. Each one unlocks the next.") : MODES[mode].blurb}</p>
                   {area === "levels" && activeLevel && (<button onClick={backToLevels} className="btn btn-ghost w-full mb-2">All levels</button>)}
                   <div className="font-mono text-[10px] text-mute pt-3 border-t rule">{area === "levels" ? ("Progress: " + passedCount + " / " + LEVELS.length + " passed") : ("Source: " + (SOURCES[config.source] ? SOURCES[config.source].label : "Custom") + " · " + CAP(config.difficulty))}</div>
-                  {area !== "levels" && (<button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Custom exercise</button>)}
+                  {area !== "levels" && (<button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Settings</button>)}
                 </div>
               </aside>
 
@@ -1341,7 +1341,7 @@
 
           {showDrawer && (
             <div className="mobile-drawer open">
-              <div className="flex items-center justify-between p-5 border-b rule"><div className="eyebrow">Custom exercise</div><button className="btn btn-ghost" onClick={() => setShowDrawer(false)} aria-label="Close"><CloseGlyph /></button></div>
+              <div className="flex items-center justify-between p-5 border-b rule"><div className="eyebrow">Settings</div><button className="btn btn-ghost" onClick={() => setShowDrawer(false)} aria-label="Close"><CloseGlyph /></button></div>
               <div className="p-5 flex flex-col gap-6 overflow-y-auto">
                 <p className="text-xs text-mute leading-relaxed">Custom settings are for free Practice. Changing one here leaves the current level.</p>
                 <div>

@@ -97,3 +97,47 @@
 
 /* RECIPE — modal scrim */
 .scrim { background: rgba(8, 8, 9, 0.94); }
+
+/* =============================================================================
+   LAYOUT STANDARD — interactive training tool (added 2026-06-13)
+   The STRUCTURAL conventions every tool in the suite should follow so modules
+   stay consistent as the suite grows. The tokens/recipes above are the look;
+   this is the layout. Source of truth — align each app to this.
+   -----------------------------------------------------------------------------
+   SHELL: the v2.1 "bench" — a 3-zone responsive grid.
+     desktop (>=1024px): [ left rail 220px | center minmax(0,1fr) | right HUD 300px ]
+     mobile: zones stack; the transport docks to a fixed bottom bar (thumb zone).
+
+   HEADER (product-first, never tool-first):
+     left  : AU shield logo (36px) + product name "Ear Training Lab" (.display ~17px)
+             + module eyebrow (.mono 8px UPPERCASE), e.g. "EQ Trainer" / "Compression Trainer".
+     right : Modules switcher (to sibling tools), then the area toggle
+             [ Levels | Practice | Learn ], then Settings (gear).
+     header stacks on mobile (flex-col -> sm:flex-row).
+
+   AREAS (the toggle, in this order):
+     Levels   — the guided curriculum; the DEFAULT landing area.
+     Practice — free play: pick a mode, open Settings to customize.
+     Learn    — explore/demonstrate the controls; no scoring.
+
+   GUIDED PATH = "Levels" (suite-wide term; unit = "Level"). A level fixes its
+     parameters and passes at need/of; levels unlock in order; progress persists
+     in localStorage under a per-tool key. The level list is an inline
+     center-stage view (reuse .week-card), not a separate overlay.
+
+   LEFT RAIL : panel 1 = "Modules" switcher; panel 2 = context (current area /
+     mode / level + a one-line blurb + the single most relevant action).
+   RIGHT HUD : a "Session" card (metrics + accuracy LED meter) plus any
+     module-specific readout (e.g. gain-reduction meter), then desktop keyboard
+     hints. Hidden on the Levels menu and result screens.
+   SETTINGS  : gear opens source picker + per-tool options. Always "Settings".
+   FOOTER    : status dot + current source + "Best with studio monitors or headphones".
+
+   TERMINOLOGY: use "Levels" (not Curriculum / Week / Task) and "Settings"
+     (not Custom exercise). The product name leads; the module name is the eyebrow.
+
+   STATUS: compression.html follows this standard. The EQ apps (full.html /
+     index.html) predate it (Curriculum/Week/Task, tool-first title, no Modules
+     switcher) and are QUEUED for a separate, confirmed alignment pass — they are
+     member-facing, so do not change them without the go-ahead.
+   ============================================================================= */
