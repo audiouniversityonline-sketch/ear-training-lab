@@ -586,28 +586,57 @@
     const { useEffect, useState, useRef, useCallback, useMemo } = React;
 
     /* ============================================================
-       COMPRESSION EAR TRAINER — objective rebuild
-       Every question has a ground-truth answer (right / wrong),
-       in the engineer's own terms. Modes:
+       COMPRESSION EAR TRAINER — objective, configurable
+       Modes (all right/wrong, ears-only during the question):
          Detect          which channel is compressed (A or B)
          Attack/Release  is B's attack (or release) faster or slower than A
          What changed    A and B differ by one parameter — name it
-       Visual aids (scope, GR meter) are shown ONLY on reveal and in
-       Learn, so the question itself is ears-only. Two compressors,
-       both loudness-matched, so level is never the tell.
+         Match           drive a live control until B (Yours) matches A (Target)
+       Sources: a transient drum groove and a sustained bass riff, plus
+       WAV upload. Custom handles: source, difficulty, parameter scope.
+       Two compressors, each loudness-matched, so level is never the tell.
        ============================================================ */
 
     const BPM = 112;
     const ENV_POINTS = 240;
-
-    // A balanced, musical compression — the baseline that gets modified.
     const BASE = { threshold: -28, knee: 6, ratio: 4, attack: 0.02, release: 0.18 };
-    // A clearly-audible setting for the Detect mode.
-    const DETECT_PRESET = { threshold: -30, knee: 6, ratio: 6, attack: 0.006, release: 0.14 };
 
-    const CHANNEL_ROLES = { A: "Channel A", B: "Channel B" };
+    const clampMakeup = (m) => Math.max(1, Math.min(3.5, m));
+    const CAP = (s) => s.charAt(0).toUpperCase() + s.slice(1);
+    const fmtMs = (s) => Math.round(s * 1000) + " ms";
 
-    // What each control does to the sound — used in the reveal to teach the cue.
+    // Per-difficulty settings. A future "levels" layer can drive these same handles.
+    const DETECT_BY_DIFF = {
+      easy:   { threshold: -34, knee: 6, ratio: 8,   attack: 0.005, release: 0.14 },
+      medium: { threshold: -28, knee: 6, ratio: 4,   attack: 0.008, release: 0.16 },
+      hard:   { threshold: -22, knee: 8, ratio: 2.5, attack: 0.012, release: 0.18 },
+    };
+    const AR_BY_DIFF = {
+      easy:   { attack: { fast: 0.003, slow: 0.12 }, release: { fast: 0.03, slow: 0.5 } },
+      medium: { attack: { fast: 0.006, slow: 0.06 }, release: { fast: 0.06, slow: 0.34 } },
+      hard:   { attack: { fast: 0.012, slow: 0.032 }, release: { fast: 0.1, slow: 0.28 } },
+    };
+    const WC_BY_DIFF = {
+      easy:   { attack: 0.003, releaseFast: 0.04, releaseSlow: 0.55, ratio: 12, threshold: -44 },
+      medium: { attack: 0.006, releaseFast: 0.06, releaseSlow: 0.42, ratio: 8, threshold: -38 },
+      hard:   { attack: 0.010, releaseFast: 0.09, releaseSlow: 0.30, ratio: 6, threshold: -34 },
+    };
+
+    const CONTROLS = {
+      threshold: { min: -50, max: -8, log: false, fmt: (v) => Math.round(v) + " dB" },
+      ratio:     { min: 1.5, max: 16, log: true, fmt: (v) => v.toFixed(1) + ":1" },
+      attack:    { min: 0.001, max: 0.12, log: true, fmt: (v) => Math.round(v * 1000) + " ms" },
+      release:   { min: 0.03, max: 0.6, log: true, fmt: (v) => Math.round(v * 1000) + " ms" },
+    };
+    const MATCH_TOL = { threshold: { type: "lin", base: 2.5 }, ratio: { type: "log", base: 1.4 }, attack: { type: "log", base: 1.7 }, release: { type: "log", base: 1.7 } };
+    const DIFF_TOLMUL = { easy: 1.6, medium: 1.0, hard: 0.65 };
+    const MATCH_TIP = {
+      threshold: "Threshold sets how much of the signal crosses into compression. Lower catches more.",
+      ratio: "Ratio sets how hard it clamps above the threshold. Higher is more aggressive.",
+      attack: "Attack sets how fast it grabs the transient. Faster softens the initial hit.",
+      release: "Release sets how fast it lets go. Faster can pump, slower is smoother.",
+    };
+
     const CUE = {
       "attack|faster": "Faster attack clamps the transient sooner. The initial snap softens and the sound sits back a touch.",
       "attack|slower": "Slower attack lets the transient through. More snap and punch up front.",
@@ -618,16 +647,13 @@
     };
 
     const MODES = {
-      detect: { label: "Detect", prompt: "Which channel is compressed?",
-        blurb: "One channel is dry, one is compressed, matched in loudness. Pick the compressed one." },
-      time: { label: "Attack / Release", prompt: "",
-        blurb: "A and B share the same compression except one time constant. Tell which way B moved." },
-      whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?",
-        blurb: "A and B are the same compressor with one parameter moved. Name the parameter." },
+      detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is dry, one is compressed, matched in loudness. Pick the compressed one." },
+      time: { label: "Attack / Release", prompt: "", blurb: "A and B share the same compression except one time constant. Tell which way B moved." },
+      whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one parameter moved. Name the parameter." },
+      match: { label: "Match", prompt: "", blurb: "A is the target. Drive the control until B (Yours) matches it by ear." },
     };
-    const MODE_ORDER = ["detect", "time", "whatChanged"];
+    const MODE_ORDER = ["detect", "time", "whatChanged", "match"];
 
-    // Learn demonstrations — hear each control in isolation (A = dry, B = this).
     const LEARN_PRESETS = [
       { key: "dry", label: "Dry", preset: null, cue: "No compression. This is your reference." },
       { key: "fastAtk", label: "Fast attack", preset: { ...BASE, attack: 0.003 }, cue: CUE["attack|faster"] },
@@ -637,44 +663,41 @@
       { key: "highRatio", label: "High ratio", preset: { ...BASE, ratio: 12 }, cue: CUE["ratio|higher"] },
     ];
 
-    const CAP = (s) => s.charAt(0).toUpperCase() + s.slice(1);
-    const fmtMs = (s) => Math.round(s * 1000) + " ms";
-    const paramVal = (preset, p) => {
-      if (!preset) return "—";
-      if (p === "attack") return fmtMs(preset.attack);
-      if (p === "release") return fmtMs(preset.release);
-      if (p === "ratio") return preset.ratio + ":1";
-      if (p === "threshold") return preset.threshold + " dB";
-      return "";
+    const ctrlValueAt = (control, pos) => {
+      const s = CONTROLS[control]; pos = Math.max(0, Math.min(1, pos));
+      if (s.log) { const lo = Math.log(s.min), hi = Math.log(s.max); return Math.exp(lo + pos * (hi - lo)); }
+      return s.min + pos * (s.max - s.min);
+    };
+    const ctrlPosOf = (control, v) => {
+      const s = CONTROLS[control];
+      if (s.log) { const lo = Math.log(s.min), hi = Math.log(s.max); return (Math.log(v) - lo) / (hi - lo); }
+      return (v - s.min) / (s.max - s.min);
+    };
+    const interpMakeup = (lookup, pos) => {
+      if (!lookup || !lookup.length) return 1;
+      if (pos <= lookup[0].pos) return lookup[0].makeup;
+      for (let i = 1; i < lookup.length; i++) { if (pos <= lookup[i].pos) { const a = lookup[i - 1], b = lookup[i]; const f = (pos - a.pos) / ((b.pos - a.pos) || 1); return a.makeup + (b.makeup - a.makeup) * f; } }
+      return lookup[lookup.length - 1].makeup;
     };
 
     /* ---------- glyphs ---------- */
     function PlayGlyph({ playing, size = 18 }) {
-      if (playing) {
-        return (<svg width={size} height={size} viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="4" height="14" /><rect x="11" y="2" width="4" height="14" /></svg>);
-      }
+      if (playing) return (<svg width={size} height={size} viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><rect x="3" y="2" width="4" height="14" /><rect x="11" y="2" width="4" height="14" /></svg>);
       return (<svg width={size} height={size} viewBox="0 0 18 18" fill="currentColor" aria-hidden="true"><path d="M4 2l12 7L4 16V2z" /></svg>);
     }
-    function GearGlyph({ size = 16 }) {
-      return (<svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.5" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>);
-    }
-    function CloseGlyph({ size = 20 }) {
-      return (<svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 4l12 12M16 4L4 16" /></svg>);
-    }
+    function GearGlyph({ size = 16 }) { return (<svg width={size} height={size} viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><circle cx="8" cy="8" r="2.5" /><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" /></svg>); }
+    function CloseGlyph({ size = 20 }) { return (<svg width={size} height={size} viewBox="0 0 20 20" fill="none" stroke="currentColor" strokeWidth="1.5" aria-hidden="true"><path d="M4 4l12 12M16 4L4 16" /></svg>); }
 
     /* ---------- helpers ---------- */
     function percent(n, d) { return !d ? "0%" : Math.round((n / d) * 100) + "%"; }
     function isMobile() { return typeof window !== "undefined" && window.matchMedia("(max-width: 1023px)").matches; }
-
     function makeNoiseBuffer(ctx, dur) {
-      const len = Math.max(1, Math.floor(ctx.sampleRate * dur));
-      const b = ctx.createBuffer(1, len, ctx.sampleRate);
-      const d = b.getChannelData(0);
-      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
-      return b;
+      const len = Math.max(1, Math.floor(ctx.sampleRate * dur)); const b = ctx.createBuffer(1, len, ctx.sampleRate); const d = b.getChannelData(0);
+      for (let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1; return b;
     }
+    /* ---- transient source: drums ---- */
     function scheduleKick(ctx, dest, t) {
-      const o = ctx.createOscillator(); const g = ctx.createGain();
+      const o = ctx.createOscillator(), g = ctx.createGain();
       o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(45, t + 0.10);
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(0.95, t + 0.004); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.30);
       o.connect(g).connect(dest); o.start(t); o.stop(t + 0.34);
@@ -694,55 +717,65 @@
       const g = ctx.createGain(); g.gain.setValueAtTime(vel, t); g.gain.exponentialRampToValueAtTime(0.0001, t + 0.045);
       n.connect(hp).connect(g).connect(dest); n.start(t); n.stop(t + 0.06);
     }
-    async function renderGroove(sampleRate) {
+    async function renderDrums(sampleRate) {
       const beat = 60 / BPM, eighth = beat / 2, total = 16 * eighth;
       const oc = new OfflineAudioContext(1, Math.ceil(total * sampleRate), sampleRate);
       const noise = makeNoiseBuffer(oc, 0.4);
       const out = oc.createGain(); out.gain.value = 0.9; out.connect(oc.destination);
       const kickAt = [0, 4, 8, 12], snareAt = [2, 6, 10, 14];
-      for (let i = 0; i < 16; i++) {
-        const t = i * eighth;
-        if (kickAt.indexOf(i) !== -1) scheduleKick(oc, out, t);
-        if (snareAt.indexOf(i) !== -1) scheduleSnare(oc, out, t, noise);
-        scheduleHat(oc, out, t, noise, (i % 2 === 0) ? 0.22 : 0.13);
-      }
+      for (let i = 0; i < 16; i++) { const t = i * eighth; if (kickAt.indexOf(i) !== -1) scheduleKick(oc, out, t); if (snareAt.indexOf(i) !== -1) scheduleSnare(oc, out, t, noise); scheduleHat(oc, out, t, noise, (i % 2 === 0) ? 0.22 : 0.13); }
       return await oc.startRendering();
     }
+    /* ---- sustained source: bass riff (dynamic so the compressor has work to do) ---- */
+    function scheduleBassNote(ctx, dest, t, freq, dur, vel) {
+      const end = t + dur, a = 0.008, r = 0.09;
+      const osc = ctx.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = freq;
+      const sub = ctx.createOscillator(); sub.type = "sine"; sub.frequency.value = freq;
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = Math.min(1600, freq * 8); lp.Q.value = 0.7;
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vel, t + a);
+      g.gain.setValueAtTime(vel, Math.max(t + a + 0.001, end - r)); g.gain.exponentialRampToValueAtTime(0.0001, end);
+      const subg = ctx.createGain(); subg.gain.value = 0.5;
+      osc.connect(lp); sub.connect(subg); subg.connect(lp); lp.connect(g).connect(dest);
+      osc.start(t); osc.stop(end + 0.02); sub.start(t); sub.stop(end + 0.02);
+    }
+    async function renderBass(sampleRate) {
+      const beat = 60 / BPM, eighth = beat / 2, total = 16 * eighth;
+      const oc = new OfflineAudioContext(1, Math.ceil(total * sampleRate), sampleRate);
+      const out = oc.createGain(); out.gain.value = 0.6; out.connect(oc.destination);
+      // i (eighth), freq, dur (eighths), vel — dynamic for the compressor to ride
+      const riff = [
+        [0, 55.0, 2, 0.9], [2, 55.0, 1, 0.5], [3, 82.4, 1, 0.6], [4, 65.4, 2, 0.85],
+        [6, 65.4, 1, 0.55], [7, 73.4, 1, 0.6], [8, 55.0, 2, 0.95], [10, 55.0, 1, 0.5],
+        [11, 49.0, 1, 0.6], [12, 43.6, 2, 0.82], [14, 41.2, 1, 0.7], [15, 82.4, 1, 0.5],
+      ];
+      riff.forEach(([i, f, d, v]) => scheduleBassNote(oc, out, i * eighth, f, d * eighth, v));
+      return await oc.startRendering();
+    }
+    const SOURCES = { drums: { label: "Drums", render: renderDrums }, bass: { label: "Bass", render: renderBass } };
+
     async function renderWet(dryBuffer, preset) {
       const oc = new OfflineAudioContext(dryBuffer.numberOfChannels, dryBuffer.length, dryBuffer.sampleRate);
       const src = oc.createBufferSource(); src.buffer = dryBuffer;
       const comp = oc.createDynamicsCompressor();
-      comp.threshold.value = preset.threshold; comp.knee.value = preset.knee; comp.ratio.value = preset.ratio;
-      comp.attack.value = preset.attack; comp.release.value = preset.release;
+      comp.threshold.value = preset.threshold; comp.knee.value = preset.knee; comp.ratio.value = preset.ratio; comp.attack.value = preset.attack; comp.release.value = preset.release;
       src.connect(comp).connect(oc.destination); src.start(0);
       return await oc.startRendering();
     }
-    function bufferRms(buffer) {
-      const d = buffer.getChannelData(0); let s = 0;
-      for (let i = 0; i < d.length; i++) s += d[i] * d[i];
-      return Math.sqrt(s / d.length);
-    }
+    function bufferRms(buffer) { const d = buffer.getChannelData(0); let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i]; return Math.sqrt(s / d.length); }
     function envelopeOf(buffer, points, gain) {
-      const d = buffer.getChannelData(0); const win = Math.max(1, Math.floor(d.length / points)); const env = [];
-      for (let i = 0; i < points; i++) {
-        let mx = 0; const start = i * win, end = Math.min(d.length, start + win);
-        for (let j = start; j < end; j++) { const a = Math.abs(d[j]); if (a > mx) mx = a; }
-        env.push(mx * (gain || 1));
-      }
+      const d = buffer.getChannelData(0), win = Math.max(1, Math.floor(d.length / points)), env = [];
+      for (let i = 0; i < points; i++) { let mx = 0; const start = i * win, end = Math.min(d.length, start + win); for (let j = start; j < end; j++) { const a = Math.abs(d[j]); if (a > mx) mx = a; } env.push(mx * (gain || 1)); }
       return env;
     }
+    const maxOf = (arr) => Math.max.apply(null, arr.concat([1e-4]));
 
-    /* ---------- transient scope (A vs B) ---------- */
+    /* ---------- scope + meters ---------- */
     function GrScope({ envA, envB, envMax }) {
       if (!envA || !envA.length) return null;
       const W = 560, H = 130, mid = H / 2, halfH = H / 2 - 10;
       const scale = (v) => Math.min(1, v / (envMax || 1));
-      const toPath = (env) => {
-        let p = "M 0 " + mid;
-        for (let i = 0; i < env.length; i++) { const x = (i / (env.length - 1)) * W, y = mid - scale(env[i]) * halfH; p += " L " + x.toFixed(1) + " " + y.toFixed(1); }
-        for (let i = env.length - 1; i >= 0; i--) { const x = (i / (env.length - 1)) * W, y = mid + scale(env[i]) * halfH; p += " L " + x.toFixed(1) + " " + y.toFixed(1); }
-        return p + " Z";
-      };
+      const toPath = (env) => { let p = "M 0 " + mid; for (let i = 0; i < env.length; i++) { const x = (i / (env.length - 1)) * W, y = mid - scale(env[i]) * halfH; p += " L " + x.toFixed(1) + " " + y.toFixed(1); } for (let i = env.length - 1; i >= 0; i--) { const x = (i / (env.length - 1)) * W, y = mid + scale(env[i]) * halfH; p += " L " + x.toFixed(1) + " " + y.toFixed(1); } return p + " Z"; };
       const beats = Array.from({ length: 8 }, (_, i) => (i / 8) * W);
       return (
         <svg viewBox={"0 0 " + W + " " + H} width="100%" style={{ display: "block" }} aria-hidden="true">
@@ -753,83 +786,44 @@
         </svg>
       );
     }
-
-    /* ---------- live gain-reduction meter (reveal / learn only) ---------- */
     function GrMeter({ nodeRef, active, maxGr = 18 }) {
       const [gr, setGr] = useState(0);
       useEffect(() => {
         if (!active) { setGr(0); return; }
-        let raf;
-        const tick = () => {
-          const node = nodeRef.current; let r = 0;
-          if (node) r = (typeof node.reduction === "number") ? node.reduction : ((node.reduction && node.reduction.value) || 0);
-          setGr(Math.max(0, -r));
-          raf = requestAnimationFrame(tick);
-        };
-        raf = requestAnimationFrame(tick);
-        return () => cancelAnimationFrame(raf);
+        let raf; const tick = () => { const node = nodeRef.current; let r = 0; if (node) r = (typeof node.reduction === "number") ? node.reduction : ((node.reduction && node.reduction.value) || 0); setGr(Math.max(0, -r)); raf = requestAnimationFrame(tick); };
+        raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
       }, [active]);
       const segs = 14, lit = Math.round((Math.min(gr, maxGr) / maxGr) * segs);
       return (
         <div>
-          <div className="flex items-center justify-between mb-2">
-            <div className="eyebrow">Gain Reduction</div>
-            <div className="font-mono text-[10px] text-mute">{active ? (gr > 0.1 ? ("-" + gr.toFixed(1) + " dB") : "0 dB") : "—"}</div>
-          </div>
+          <div className="flex items-center justify-between mb-2"><div className="eyebrow">Gain Reduction</div><div className="font-mono text-[10px] text-mute">{active ? (gr > 0.1 ? ("-" + gr.toFixed(1) + " dB") : "0 dB") : "—"}</div></div>
           <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {Array.from({ length: segs }).map((_, i) => {
-              const on = active && i < lit; const frac = i / segs;
-              const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)";
-              return <div key={i} style={{ height: 7, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />;
-            })}
+            {Array.from({ length: segs }).map((_, i) => { const on = active && i < lit; const frac = i / segs; const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)"; return <div key={i} style={{ height: 7, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />; })}
           </div>
         </div>
       );
     }
-
     function SettingsReadout({ preset }) {
-      const rows = preset
-        ? [["Ratio", preset.ratio + ":1"], ["Threshold", preset.threshold + " dB"], ["Attack", fmtMs(preset.attack)], ["Release", fmtMs(preset.release)]]
-        : [["Ratio", "—"], ["Threshold", "—"], ["Attack", "—"], ["Release", "Bypassed"]];
-      return (
-        <div className="grid grid-cols-2 gap-x-6 gap-y-2">
-          {rows.map(([k, v]) => (<div key={k} className="flex items-center justify-between font-mono text-xs"><span className="text-mute">{k}</span><span className="text-ink">{v}</span></div>))}
-        </div>
-      );
+      const rows = preset ? [["Ratio", preset.ratio + ":1"], ["Threshold", preset.threshold + " dB"], ["Attack", fmtMs(preset.attack)], ["Release", fmtMs(preset.release)]] : [["Ratio", "—"], ["Threshold", "—"], ["Attack", "—"], ["Release", "Bypassed"]];
+      return (<div className="grid grid-cols-2 gap-x-6 gap-y-2">{rows.map(([k, v]) => (<div key={k} className="flex items-center justify-between font-mono text-xs"><span className="text-mute">{k}</span><span className="text-ink">{v}</span></div>))}</div>);
     }
-
     function AccuracyMeter({ value = 0, segments = 16 }) {
-      const v = Math.max(0, Math.min(1, value)); const lit = Math.round(v * segments);
-      const color = v >= 0.8 ? "var(--green)" : v >= 0.5 ? "var(--amber)" : "var(--hot)";
-      return (
-        <div style={{ display: "flex", gap: 2, alignItems: "stretch", height: 10 }}>
-          {Array.from({ length: segments }).map((_, i) => { const on = i < lit; return <div key={i} style={{ flex: 1, borderRadius: 1, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5 }} />; })}
-        </div>
-      );
+      const v = Math.max(0, Math.min(1, value)), lit = Math.round(v * segments), color = v >= 0.8 ? "var(--green)" : v >= 0.5 ? "var(--amber)" : "var(--hot)";
+      return (<div style={{ display: "flex", gap: 2, alignItems: "stretch", height: 10 }}>{Array.from({ length: segments }).map((_, i) => { const on = i < lit; return <div key={i} style={{ flex: 1, borderRadius: 1, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5 }} />; })}</div>);
     }
-    function Metric({ label, value, sub }) {
-      return (<div><div className="eyebrow mb-2">{label}</div><div className="font-display font-bold italic text-3xl sm:text-4xl leading-none">{value}</div>{sub && <div className="font-mono text-xs text-mute mt-2">{sub}</div>}</div>);
+    function Metric({ label, value, sub }) { return (<div><div className="eyebrow mb-2">{label}</div><div className="font-display font-bold italic text-3xl sm:text-4xl leading-none">{value}</div>{sub && <div className="font-mono text-xs text-mute mt-2">{sub}</div>}</div>); }
+    function Seg({ options, value, onChange, disabled }) {
+      return (<div className="seg flex-wrap">{options.map(o => (<button key={o.value} className={value === o.value ? "active" : ""} onClick={() => onChange(o.value)} disabled={disabled}>{o.label}</button>))}</div>);
     }
 
     function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
       return (
-        <div className="overlay">
-          <div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
-            <div className="flex items-center" style={{ gap: 12 }}>
-              <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} />
-              <div>
-                <div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Compression Trainer</div>
-                <div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Ear Training Lab</div>
-              </div>
-            </div>
-            <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">
-              Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms.
-              Both channels are matched in loudness, so the only tell is the sound. Best on monitors or headphones.
-            </p>
-            {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
-            <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building groove..." : "Start"}</button>
-          </div>
-        </div>
+        <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
+          <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Compression Trainer</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Ear Training Lab</div></div></div>
+          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Both channels are matched in loudness, so the only tell is the sound. Best on monitors or headphones.</p>
+          {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
+          <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Start"}</button>
+        </div></div>
       );
     }
 
@@ -837,12 +831,14 @@
     function App() {
       const ctxRef = useRef(null);
       const nodesRef = useRef(null);
-      const monitorRef = useRef(null);      // compressor node currently monitored (for the meter)
-      const grooveRef = useRef(null);
+      const monitorRef = useRef(null);
+      const srcBufRef = useRef(null);
+      const customBufRef = useRef(null);
       const dryRmsRef = useRef(1e-6);
       const dryEnvRef = useRef(null);
       const dryMaxRef = useRef(1e-4);
-      const seqRef = useRef(0);              // discards stale async round builds
+      const seqRef = useRef(0);
+      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchControl: "random" });
 
       const [audioReady, setAudioReady] = useState(false);
       const [audioLoading, setAudioLoading] = useState(false);
@@ -858,8 +854,12 @@
       const [showAnswer, setShowAnswer] = useState(false);
       const [lastCorrect, setLastCorrect] = useState(null);
 
+      const [matchPos, setMatchPos] = useState(0.5);
+      const [matchResult, setMatchResult] = useState(null);
+      const [matchScope, setMatchScope] = useState(null);
+
       const [learnKey, setLearnKey] = useState("fastAtk");
-      const [learnData, setLearnData] = useState(null);   // { preset, envA, envB, envMax, cue, label }
+      const [learnData, setLearnData] = useState(null);
 
       const [roundNum, setRoundNum] = useState(1);
       const [sessionCorrect, setSessionCorrect] = useState(0);
@@ -867,188 +867,184 @@
       const [streak, setStreak] = useState(0);
       const [bestStreak, setBestStreak] = useState(0);
 
-      const [audioSource, setAudioSource] = useState("groove");
+      const [config, setConfig] = useState(configRef.current);
+      const [audioSource, setAudioSource] = useState("drums");
       const [customFileName, setCustomFileName] = useState("");
       const [showDrawer, setShowDrawer] = useState(false);
 
-      const showVisuals = showAnswer || isLearn;   // ears-only during a question
+      const showVisuals = showAnswer || isLearn;
+      const roles = (round && round.mode === "match") ? { A: "Target", B: "Yours" } : { A: "Channel A", B: "Channel B" };
 
-      /* ----- measure one channel (offline): loudness-match + envelope + GR ----- */
+      /* ----- measure one channel offline ----- */
       const measure = async (preset) => {
-        const buf = grooveRef.current;
+        const buf = srcBufRef.current;
         if (!preset) return { makeup: 1, env: envelopeOf(buf, ENV_POINTS, 1), gr: 0 };
         const wet = await renderWet(buf, preset);
         const wetRms = bufferRms(wet) || 1e-6;
-        const makeup = Math.max(1, Math.min(3.5, dryRmsRef.current / wetRms));
-        const env = envelopeOf(wet, ENV_POINTS, makeup);
-        const envRaw = envelopeOf(wet, ENV_POINTS, 1);
-        const dryEnv = dryEnvRef.current, loud = dryMaxRef.current * 0.5;
-        let gr = 0;
-        for (let i = 0; i < ENV_POINTS; i++) {
-          if (dryEnv[i] > loud && dryEnv[i] > 1e-4) { const r = -20 * Math.log10(Math.max(envRaw[i] / dryEnv[i], 1e-4)); if (r > gr) gr = r; }
-        }
+        const makeup = clampMakeup(dryRmsRef.current / wetRms);
+        const env = envelopeOf(wet, ENV_POINTS, makeup), envRaw = envelopeOf(wet, ENV_POINTS, 1);
+        const dryEnv = dryEnvRef.current, loud = dryMaxRef.current * 0.5; let gr = 0;
+        for (let i = 0; i < ENV_POINTS; i++) { if (dryEnv[i] > loud && dryEnv[i] > 1e-4) { const r = -20 * Math.log10(Math.max(envRaw[i] / dryEnv[i], 1e-4)); if (r > gr) gr = r; } }
         return { makeup, env, gr };
       };
 
-      /* ----- audio graph: two compressors off one looping source ----- */
       const buildGraph = (buffer) => {
         const ctx = ctxRef.current;
         const src = ctx.createBufferSource(); src.buffer = buffer; src.loop = true;
-        const compA = ctx.createDynamicsCompressor(); const makeupA = ctx.createGain(); const gainA = ctx.createGain(); gainA.gain.value = 1;
-        const compB = ctx.createDynamicsCompressor(); const makeupB = ctx.createGain(); const gainB = ctx.createGain(); gainB.gain.value = 0;
+        const compA = ctx.createDynamicsCompressor(), makeupA = ctx.createGain(), gainA = ctx.createGain(); gainA.gain.value = 1;
+        const compB = ctx.createDynamicsCompressor(), makeupB = ctx.createGain(), gainB = ctx.createGain(); gainB.gain.value = 0;
         const master = ctx.createGain(); master.gain.value = 0.82;
         src.connect(compA); compA.connect(makeupA); makeupA.connect(gainA); gainA.connect(master);
         src.connect(compB); compB.connect(makeupB); makeupB.connect(gainB); gainB.connect(master);
-        master.connect(ctx.destination);
-        src.start(0);
+        master.connect(ctx.destination); src.start(0);
         nodesRef.current = { src, compA, makeupA, gainA, compB, makeupB, gainB, master };
         monitorRef.current = compA;
       };
-
       const setComp = (comp, preset, makeupNode, makeupVal) => {
         const t = ctxRef.current.currentTime;
         const set = (param, val) => { try { param.setValueAtTime(val, t); } catch (e) { param.value = val; } };
         if (!preset) { set(comp.threshold, 0); set(comp.knee, 0); set(comp.ratio, 1); set(comp.attack, 0.003); set(comp.release, 0.25); set(makeupNode.gain, 1); }
         else { set(comp.threshold, preset.threshold); set(comp.knee, preset.knee); set(comp.ratio, preset.ratio); set(comp.attack, preset.attack); set(comp.release, preset.release); set(makeupNode.gain, makeupVal || 1); }
       };
-
-      const applyRoundToLive = (r) => {
-        const ns = nodesRef.current; if (!ns) return;
-        setComp(ns.compA, r.presetA, ns.makeupA, r.makeupA);
-        setComp(ns.compB, r.presetB, ns.makeupB, r.makeupB);
-      };
-
       const switchToChannel = (ch) => {
-        const ns = nodesRef.current; const ctx = ctxRef.current; if (!ns || !ctx) return;
-        const t = ctx.currentTime;
-        ns.gainA.gain.setTargetAtTime(ch === "A" ? 1 : 0, t, 0.01);
-        ns.gainB.gain.setTargetAtTime(ch === "B" ? 1 : 0, t, 0.01);
-        monitorRef.current = ch === "A" ? ns.compA : ns.compB;
-        setListenCh(ch);
+        const ns = nodesRef.current, ctx = ctxRef.current; if (!ns || !ctx) return; const t = ctx.currentTime;
+        ns.gainA.gain.setTargetAtTime(ch === "A" ? 1 : 0, t, 0.01); ns.gainB.gain.setTargetAtTime(ch === "B" ? 1 : 0, t, 0.01);
+        monitorRef.current = ch === "A" ? ns.compA : ns.compB; setListenCh(ch);
       };
+      const toggleAudio = async () => { const ctx = ctxRef.current; if (!ctx) return; if (ctx.state === "running") { await ctx.suspend(); setIsPlaying(false); } else { await ctx.resume(); setIsPlaying(true); } };
 
-      const toggleAudio = async () => {
-        const ctx = ctxRef.current; if (!ctx) return;
-        if (ctx.state === "running") { await ctx.suspend(); setIsPlaying(false); }
-        else { await ctx.resume(); setIsPlaying(true); }
-      };
-
-      /* ----- round generation per mode ----- */
+      /* ----- round generation ----- */
       const buildRound = async (m) => {
+        const cfg = configRef.current, diff = cfg.difficulty;
+        if (m === "match") {
+          const control = cfg.matchControl === "random" ? ["attack", "release", "threshold", "ratio"][Math.floor(Math.random() * 4)] : cfg.matchControl;
+          const targetPos = 0.2 + Math.random() * 0.6;
+          const target = ctrlValueAt(control, targetPos);
+          const off = 0.32 + Math.random() * 0.2, dir = Math.random() < 0.5 ? -1 : 1;
+          let startPos = targetPos + dir * off; if (startPos < 0.05 || startPos > 0.95) startPos = targetPos - dir * off; startPos = Math.max(0.05, Math.min(0.95, startPos));
+          const buf = srcBufRef.current, N = 7, lookup = [];
+          for (let k = 0; k < N; k++) { const p = k / (N - 1), v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lookup.push({ pos: p, makeup: clampMakeup(dryRmsRef.current / (bufferRms(wet) || 1e-6)) }); }
+          const wetT = await renderWet(buf, { ...BASE, [control]: target }); const makeupTarget = clampMakeup(dryRmsRef.current / (bufferRms(wetT) || 1e-6)); const envTarget = envelopeOf(wetT, ENV_POINTS, makeupTarget);
+          const tolSpec = MATCH_TOL[control], mul = DIFF_TOLMUL[diff]; const tol = tolSpec.type === "lin" ? tolSpec.base * mul : 1 + (tolSpec.base - 1) * mul;
+          return { mode: "match", control, target, targetPos, startPos, lookup, makeupTarget, envTarget, tol, presetTarget: { ...BASE, [control]: target }, prompt: "Match A's " + control + " on B" };
+        }
         let presetA, presetB, answer, options, prompt, detail = {};
         if (m === "detect") {
-          const compIsB = Math.random() < 0.5;
-          presetA = compIsB ? null : DETECT_PRESET; presetB = compIsB ? DETECT_PRESET : null;
-          answer = compIsB ? "B" : "A";
-          options = [{ key: "A", label: "A is compressed" }, { key: "B", label: "B is compressed" }];
-          prompt = MODES.detect.prompt;
+          const compIsB = Math.random() < 0.5; const comp = DETECT_BY_DIFF[diff];
+          presetA = compIsB ? null : comp; presetB = compIsB ? comp : null; answer = compIsB ? "B" : "A";
+          options = [{ key: "A", label: "A is compressed" }, { key: "B", label: "B is compressed" }]; prompt = MODES.detect.prompt;
         } else if (m === "time") {
-          const control = Math.random() < 0.5 ? "attack" : "release";
-          const slower = Math.random() < 0.5;
-          presetA = { ...BASE };
-          presetB = { ...BASE };
-          if (control === "attack") presetB.attack = slower ? 0.08 : 0.004;
-          else presetB.release = slower ? 0.45 : 0.05;
-          answer = slower ? "slower" : "faster";
-          options = [{ key: "faster", label: "B is faster" }, { key: "slower", label: "B is slower" }];
-          prompt = "B's " + control + " compared to A?";
-          detail = { control, direction: answer };
+          const control = Math.random() < 0.5 ? "attack" : "release", slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
+          presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
+          answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B is faster" }, { key: "slower", label: "B is slower" }];
+          prompt = "B's " + control + " compared to A?"; detail = { control, direction: answer };
         } else {
-          const params = ["attack", "release", "ratio", "threshold"];
-          const param = params[Math.floor(Math.random() * params.length)];
-          presetA = { ...BASE }; presetB = { ...BASE };
-          let direction = "";
-          if (param === "attack") { presetB.attack = 0.003; direction = "faster"; }
-          else if (param === "release") { const fast = Math.random() < 0.5; presetB.release = fast ? 0.04 : 0.6; direction = fast ? "faster" : "slower"; }
-          else if (param === "ratio") { presetB.ratio = 12; direction = "higher"; }
-          else { presetB.threshold = -42; direction = "lower"; }
-          answer = param;
-          options = params.map(p => ({ key: p, label: CAP(p) }));
-          prompt = MODES.whatChanged.prompt;
-          detail = { param, direction };
+          const pool = cfg.whatChangedPool === 2 ? ["attack", "release"] : ["attack", "release", "ratio", "threshold"];
+          const param = pool[Math.floor(Math.random() * pool.length)], wc = WC_BY_DIFF[diff];
+          presetA = { ...BASE }; presetB = { ...BASE }; let direction = "";
+          if (param === "attack") { presetB.attack = wc.attack; direction = "faster"; }
+          else if (param === "release") { const fast = Math.random() < 0.5; presetB.release = fast ? wc.releaseFast : wc.releaseSlow; direction = fast ? "faster" : "slower"; }
+          else if (param === "ratio") { presetB.ratio = wc.ratio; direction = "higher"; }
+          else { presetB.threshold = wc.threshold; direction = "lower"; }
+          answer = param; options = pool.map(p => ({ key: p, label: CAP(p) })); prompt = MODES.whatChanged.prompt; detail = { param, direction };
         }
-        const a = await measure(presetA); const b = await measure(presetB);
-        const envMax = Math.max(Math.max.apply(null, a.env), Math.max.apply(null, b.env), 1e-4);
+        const a = await measure(presetA), b = await measure(presetB);
+        const envMax = Math.max(maxOf(a.env), maxOf(b.env));
         return { mode: m, presetA, presetB, makeupA: a.makeup, makeupB: b.makeup, envA: a.env, envB: b.env, grA: a.gr, grB: b.gr, envMax, answer, options, prompt, detail };
       };
 
       const newRound = async (m) => {
-        const useMode = m || mode;
-        const seq = ++seqRef.current;
-        setBuilding(true); setSelected(null); setShowAnswer(false); setLastCorrect(null);
+        const useMode = m || mode, seq = ++seqRef.current;
+        setBuilding(true); setSelected(null); setShowAnswer(false); setLastCorrect(null); setMatchResult(null); setMatchScope(null);
         const r = await buildRound(useMode);
-        if (seq !== seqRef.current) return;   // a newer round superseded this one
-        setRound(r); applyRoundToLive(r); switchToChannel("A"); setBuilding(false);
+        if (seq !== seqRef.current) return;
+        setRound(r);
+        const ns = nodesRef.current;
+        if (r.mode === "match") { setComp(ns.compA, r.presetTarget, ns.makeupA, r.makeupTarget); setMatchPos(r.startPos); setComp(ns.compB, { ...BASE, [r.control]: ctrlValueAt(r.control, r.startPos) }, ns.makeupB, interpMakeup(r.lookup, r.startPos)); }
+        else { setComp(ns.compA, r.presetA, ns.makeupA, r.makeupA); setComp(ns.compB, r.presetB, ns.makeupB, r.makeupB); }
+        switchToChannel("A"); setBuilding(false);
+      };
+
+      const updateMatchLive = (pos) => {
+        const ns = nodesRef.current; if (!ns || !round || round.mode !== "match") return;
+        setComp(ns.compB, { ...BASE, [round.control]: ctrlValueAt(round.control, pos) }, ns.makeupB, interpMakeup(round.lookup, pos));
       };
 
       const submitAnswer = (key) => {
-        if (isLearn || !round || showAnswer || building) return;
+        if (isLearn || !round || showAnswer || building || round.mode === "match") return;
         const correct = key === round.answer;
         setSelected(key); setShowAnswer(true); setLastCorrect(correct);
         setSessionTotal(t => t + 1);
-        if (correct) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); }
-        else setStreak(0);
+        if (correct) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
+      };
+
+      const submitMatch = async () => {
+        if (!round || round.mode !== "match" || showAnswer || building) return;
+        const value = ctrlValueAt(round.control, matchPos), t = round.target, spec = MATCH_TOL[round.control];
+        let within, tight;
+        if (spec.type === "lin") { const err = Math.abs(value - t); within = err <= round.tol; tight = err <= round.tol * 0.5; }
+        else { const f = Math.max(value / t, t / value); within = f <= round.tol; tight = f <= 1 + (round.tol - 1) * 0.5; }
+        setSessionTotal(n => n + 1);
+        if (within) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
+        setMatchResult({ value, target: t, within, tight });
+        setSelected("done"); setShowAnswer(true); setLastCorrect(within);
+        try { const buf = srcBufRef.current; const wetY = await renderWet(buf, { ...BASE, [round.control]: value }); const envY = envelopeOf(wetY, ENV_POINTS, interpMakeup(round.lookup, matchPos)); setMatchScope({ envA: round.envTarget, envB: envY, envMax: Math.max(maxOf(round.envTarget), maxOf(envY)) }); } catch (e) {}
       };
 
       const nextRound = () => { setRoundNum(n => n + 1); newRound(); };
-
       const changeMode = (m) => { if (m === mode) return; setMode(m); if (!isLearn) newRound(m); };
 
       /* ----- learn ----- */
       const applyLearn = async (key) => {
-        const item = LEARN_PRESETS.find(p => p.key === key) || LEARN_PRESETS[0];
-        const seq = ++seqRef.current;
-        const a = await measure(null); const b = await measure(item.preset);
+        const item = LEARN_PRESETS.find(p => p.key === key) || LEARN_PRESETS[0], seq = ++seqRef.current;
+        const a = await measure(null), b = await measure(item.preset);
         if (seq !== seqRef.current) return;
-        const envMax = Math.max(Math.max.apply(null, a.env), Math.max.apply(null, b.env), 1e-4);
-        const ns = nodesRef.current;
-        setComp(ns.compA, null, ns.makeupA, 1);
-        setComp(ns.compB, item.preset, ns.makeupB, b.makeup);
-        setLearnData({ preset: item.preset, envA: a.env, envB: b.env, envMax, cue: item.cue, label: item.label, gr: b.gr });
+        const ns = nodesRef.current; setComp(ns.compA, null, ns.makeupA, 1); setComp(ns.compB, item.preset, ns.makeupB, b.makeup);
+        setLearnData({ preset: item.preset, envA: a.env, envB: b.env, envMax: Math.max(maxOf(a.env), maxOf(b.env)), cue: item.cue, label: item.label, gr: b.gr });
         switchToChannel(item.preset ? "B" : "A");
       };
       const learnPick = (key) => { setLearnKey(key); applyLearn(key); };
-
       const enterLearn = () => { setIsLearn(true); setShowAnswer(false); applyLearn(learnKey); };
       const exitLearn = () => { setIsLearn(false); newRound(); };
 
+      /* ----- config / sources ----- */
+      const switchSource = async (key) => {
+        const ctx = ctxRef.current; if (!ctx) return;
+        const buf = key === "custom" ? customBufRef.current : (SOURCES[key] ? await SOURCES[key].render(ctx.sampleRate) : null);
+        if (!buf) return;
+        await rebuildFromBuffer(buf, key);
+      };
+      const setCfg = (patch) => {
+        const next = { ...configRef.current, ...patch }; configRef.current = next; setConfig(next);
+        if (patch.source) switchSource(patch.source);
+        else if (isLearn) applyLearn(learnKey); else newRound();
+      };
+
       /* ----- init ----- */
+      const primeFromBuffer = (buffer) => { srcBufRef.current = buffer; dryRmsRef.current = bufferRms(buffer) || 1e-6; dryEnvRef.current = envelopeOf(buffer, ENV_POINTS, 1); dryMaxRef.current = maxOf(dryEnvRef.current); };
       const unlock = async () => {
         setAudioLoading(true); setAudioError(null);
         try {
-          const Ctx = window.AudioContext || window.webkitAudioContext;
-          const ctx = new Ctx(); await ctx.resume(); ctxRef.current = ctx;
-          const buffer = await renderGroove(ctx.sampleRate); grooveRef.current = buffer;
-          dryRmsRef.current = bufferRms(buffer) || 1e-6;
-          dryEnvRef.current = envelopeOf(buffer, ENV_POINTS, 1);
-          dryMaxRef.current = Math.max.apply(null, dryEnvRef.current.concat([1e-4]));
-          buildGraph(buffer);
-          await ctx.suspend();
-          setAudioReady(true); setAudioLoading(false);
-          newRound("detect");
+          const Ctx = window.AudioContext || window.webkitAudioContext; const ctx = new Ctx(); await ctx.resume(); ctxRef.current = ctx;
+          const buffer = await SOURCES[configRef.current.source].render(ctx.sampleRate); primeFromBuffer(buffer);
+          buildGraph(buffer); await ctx.suspend();
+          setAudioReady(true); setAudioLoading(false); newRound("detect");
         } catch (e) { console.error(e); setAudioError((e && e.message) || "Audio init failed"); setAudioLoading(false); }
       };
-
       const rebuildFromBuffer = async (buffer, label, fileName) => {
         const ctx = ctxRef.current; if (!ctx) return;
         try {
           if (nodesRef.current) { try { nodesRef.current.src.stop(); } catch (e) {} }
-          grooveRef.current = buffer;
-          dryRmsRef.current = bufferRms(buffer) || 1e-6;
-          dryEnvRef.current = envelopeOf(buffer, ENV_POINTS, 1);
-          dryMaxRef.current = Math.max.apply(null, dryEnvRef.current.concat([1e-4]));
-          buildGraph(buffer);
-          if (ctx.state !== "running") await ctx.suspend();
-          setAudioSource(label); setCustomFileName(fileName || "");
+          primeFromBuffer(buffer); buildGraph(buffer); if (ctx.state !== "running") await ctx.suspend();
+          setAudioSource(label); if (label === "custom") setCustomFileName(fileName || customFileName || "");
           if (isLearn) applyLearn(learnKey); else newRound();
         } catch (e) { console.error(e); setAudioError("Could not load that file."); }
       };
       const onUploadFile = async (file) => {
         const ctx = ctxRef.current; if (!ctx || !file) return;
-        try { const buf = await file.arrayBuffer(); const decoded = await ctx.decodeAudioData(buf); await rebuildFromBuffer(decoded, "custom", file.name); }
+        try { const buf = await file.arrayBuffer(); const decoded = await ctx.decodeAudioData(buf); customBufRef.current = decoded; configRef.current = { ...configRef.current, source: "custom" }; setConfig(configRef.current); await rebuildFromBuffer(decoded, "custom", file.name); }
         catch (e) { console.error(e); setAudioError("Could not decode that audio file."); }
       };
-      const restoreGroove = async () => { const ctx = ctxRef.current; if (!ctx) return; const buffer = await renderGroove(ctx.sampleRate); await rebuildFromBuffer(buffer, "groove", ""); };
 
       /* ----- keyboard ----- */
       useEffect(() => {
@@ -1059,275 +1055,174 @@
           if (e.key === " ") { e.preventDefault(); toggleAudio(); return; }
           if (k === "a") { switchToChannel("A"); return; }
           if (k === "b") { switchToChannel("B"); return; }
-          if (e.key === "Enter") { if (!isLearn && showAnswer) nextRound(); return; }
-          if (!isLearn && round && !showAnswer) {
-            const d = parseInt(e.key, 10);
-            if (d >= 1 && d <= round.options.length) submitAnswer(round.options[d - 1].key);
-          }
+          if (e.key === "Enter") { if (!isLearn && showAnswer) nextRound(); else if (!isLearn && round && round.mode === "match") submitMatch(); return; }
+          if (!isLearn && round && !showAnswer && round.mode !== "match") { const d = parseInt(e.key, 10); if (d >= 1 && d <= round.options.length) submitAnswer(round.options[d - 1].key); }
         };
-        window.addEventListener("keydown", onKey);
-        return () => window.removeEventListener("keydown", onKey);
-      }, [audioReady, isLearn, mode, round, showAnswer, isPlaying, listenCh]);
+        window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
+      }, [audioReady, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos]);
 
-      /* ----- answer options ----- */
       const renderOptions = () => {
-        if (!round) return null;
+        if (!round || round.mode === "match") return null;
         const cols = round.options.length === 2 ? "grid-cols-2" : "grid-cols-2 sm:grid-cols-4";
         return (
           <div className={"grid " + cols + " gap-2"}>
             {round.options.map((o, i) => {
-              let cls = "freq-pill"; let style = {};
-              if (showAnswer) {
-                if (o.key === round.answer) cls += " selected";
-                else if (o.key === selected) style = { borderColor: "var(--hot)", color: "var(--hot)" };
-              }
-              return (
-                <button key={o.key} className={cls} style={style} onClick={() => submitAnswer(o.key)} disabled={!audioReady || showAnswer || building}>
-                  <div className="label">{o.label}</div>
-                  <div className="index">{i + 1}</div>
-                </button>
-              );
+              let cls = "freq-pill", style = {};
+              if (showAnswer) { if (o.key === round.answer) cls += " selected"; else if (o.key === selected) style = { borderColor: "var(--hot)", color: "var(--hot)" }; }
+              return (<button key={o.key} className={cls} style={style} onClick={() => submitAnswer(o.key)} disabled={!audioReady || showAnswer || building}><div className="label">{o.label}</div><div className="index">{i + 1}</div></button>);
             })}
           </div>
         );
       };
 
-      /* ----- reveal copy ----- */
-      const revealCue = () => {
-        if (!round) return "";
-        if (round.mode === "detect") return "The compressed channel is " + round.answer + ". Listen for tamed peaks and a denser, more even body.";
-        if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || "";
-        return CUE[round.detail.param + "|" + round.detail.direction] || "";
-      };
-      const revealHeadline = () => {
-        if (!round) return "";
-        if (round.mode === "detect") return "Channel " + round.answer + " was compressed";
-        if (round.mode === "time") return "B's " + round.detail.control + " was " + round.detail.direction;
-        return CAP(round.detail.param) + " changed (" + round.detail.direction + ")";
-      };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". Listen for tamed peaks and a denser, more even body."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " was " + round.detail.direction; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
-      const scopeA = isLearn ? (learnData && learnData.envA) : (round && round.envA);
-      const scopeB = isLearn ? (learnData && learnData.envB) : (round && round.envB);
-      const scopeMax = isLearn ? (learnData && learnData.envMax) : (round && round.envMax);
+      const scopeA = isLearn ? (learnData && learnData.envA) : (round && round.mode === "match" ? (matchScope && matchScope.envA) : (round && round.envA));
+      const scopeB = isLearn ? (learnData && learnData.envB) : (round && round.mode === "match" ? (matchScope && matchScope.envB) : (round && round.envB));
+      const scopeMax = isLearn ? (learnData && learnData.envMax) : (round && round.mode === "match" ? (matchScope && matchScope.envMax) : (round && round.envMax));
 
       return (
         <div className="min-h-screen flex flex-col">
           {!audioReady && <AudioUnlockOverlay onUnlock={unlock} isLoading={audioLoading} error={audioError} />}
 
-          {/* HEADER */}
           <header className="border-b rule">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="flex items-center" style={{ gap: 12 }}>
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block", flexShrink: 0 }} />
-                <div>
-                  <div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Compression Trainer</div>
-                  <div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Ear Training Lab · Prototype</div>
-                </div>
+                <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Compression Trainer</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Ear Training Lab · Prototype</div></div>
               </div>
               <div className="flex items-center gap-2">
                 <a href="full.html" className="btn btn-ghost" aria-label="EQ Trainer">EQ</a>
-                <div className="seg" aria-label="Practice or Learn">
-                  <button className={!isLearn ? "active" : ""} onClick={() => { if (isLearn) exitLearn(); }} disabled={!audioReady}>Practice</button>
-                  <button className={isLearn ? "active" : ""} onClick={() => { if (!isLearn) enterLearn(); }} disabled={!audioReady}>Learn</button>
-                </div>
-                <button onClick={() => setShowDrawer(true)} className="btn btn-ghost" aria-label="Settings"><GearGlyph /></button>
+                <div className="seg" aria-label="Practice or Learn"><button className={!isLearn ? "active" : ""} onClick={() => { if (isLearn) exitLearn(); }} disabled={!audioReady}>Practice</button><button className={isLearn ? "active" : ""} onClick={() => { if (!isLearn) enterLearn(); }} disabled={!audioReady}>Learn</button></div>
+                <button onClick={() => setShowDrawer(true)} className="btn btn-ghost" aria-label="Custom exercise"><GearGlyph /></button>
               </div>
             </div>
           </header>
 
-          {/* MAIN */}
           <main className="flex-1 w-full">
             <div className="bench">
-              {/* LEFT RAIL */}
               <aside className="bench-left">
-                <div className="rail-panel mb-4">
-                  <div className="eyebrow mb-3">Modules</div>
-                  <a href="full.html" className="btn btn-ghost w-full mb-2">EQ Trainer</a>
-                  <button className="btn btn-solid w-full" disabled>Compression</button>
-                </div>
+                <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><a href="full.html" className="btn btn-ghost w-full mb-2">EQ Trainer</a><button className="btn btn-solid w-full" disabled>Compression</button></div>
                 <div className="rail-panel">
                   <div className="eyebrow mb-2">{isLearn ? "Learn" : "Mode"}</div>
                   <div className="font-display font-semibold text-base leading-snug mb-2">{isLearn ? "Hear the controls" : MODES[mode].label}</div>
-                  <p className="text-xs text-ink-2 leading-relaxed">{isLearn ? "Apply one control at a time and A/B it against dry. No scoring." : MODES[mode].blurb}</p>
+                  <p className="text-xs text-ink-2 leading-relaxed mb-3">{isLearn ? "Apply one control at a time and A/B it against dry. No scoring." : MODES[mode].blurb}</p>
+                  <div className="font-mono text-[10px] text-mute pt-3 border-t rule">Source: {SOURCES[config.source] ? SOURCES[config.source].label : "Custom"} · {CAP(config.difficulty)}</div>
+                  <button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Custom exercise</button>
                 </div>
               </aside>
 
-              {/* CENTER */}
               <div className="bench-center">
-                {/* Mode selector (Practice only) */}
                 {!isLearn && (
-                  <section className="mb-6">
-                    <div className="eyebrow mb-3">Mode</div>
-                    <div className="seg flex-wrap">
-                      {MODE_ORDER.map(m => (<button key={m} className={mode === m ? "active" : ""} onClick={() => changeMode(m)} disabled={!audioReady}>{MODES[m].label}</button>))}
-                    </div>
-                  </section>
+                  <section className="mb-6"><div className="eyebrow mb-3">Mode</div><div className="seg flex-wrap">{MODE_ORDER.map(m => (<button key={m} className={mode === m ? "active" : ""} onClick={() => changeMode(m)} disabled={!audioReady}>{MODES[m].label}</button>))}</div></section>
                 )}
 
-                {/* Transport + channels (desktop) */}
                 <section className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: "relative" }}>
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
                     <button className="transport" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={20} /></button>
-                    <div className="flex-1 grid grid-cols-2 gap-2">
-                      {["A", "B"].map(ch => { const active = listenCh === ch; return (
-                        <button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}>
-                          <div className="letter">{ch}</div><div className="role">{CHANNEL_ROLES[ch]}</div>
-                        </button>); })}
-                    </div>
+                    <div className="flex-1 grid grid-cols-2 gap-2">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><div className="letter">{ch}</div><div className="role">{roles[ch]}</div></button>); })}</div>
                   </div>
                 </section>
 
-                {/* Prompt */}
-                <section className="mb-5">
-                  <div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div>
-                  <h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">
-                    {isLearn ? "Apply a control, then A/B it" : (building ? "..." : (round ? round.prompt : ""))}
-                  </h2>
-                </section>
+                <section className="mb-5"><div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div><h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">{isLearn ? "Apply a control, then A/B it" : (building ? "..." : (round ? round.prompt : ""))}</h2></section>
 
-                {/* Answer options (Practice) */}
-                {!isLearn && <section className="mb-6">{renderOptions()}</section>}
-
-                {/* Learn selector */}
-                {isLearn && (
-                  <section className="mb-6">
-                    <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                      {LEARN_PRESETS.map(p => (
-                        <button key={p.key} className={"freq-pill " + (learnKey === p.key ? "selected" : "")} onClick={() => learnPick(p.key)} disabled={!audioReady}>
-                          <div className="label" style={{ fontSize: 13 }}>{p.label}</div>
-                        </button>
-                      ))}
-                    </div>
+                {/* Answer area */}
+                {!isLearn && round && round.mode === "match" && (
+                  <section className="card-dark p-5 mb-6">
+                    <div className="flex items-center justify-between mb-3"><div className="eyebrow">Your {round.control}</div><div className="font-mono text-sm text-ink">{CONTROLS[round.control].fmt(ctrlValueAt(round.control, matchPos))}</div></div>
+                    <input type="range" min="0" max="1000" value={Math.round(matchPos * 1000)} disabled={showAnswer || building} onChange={(e) => { const p = (+e.target.value) / 1000; setMatchPos(p); updateMatchLive(p); }} />
+                    <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[round.control].fmt(CONTROLS[round.control].min)}</span><span>{CONTROLS[round.control].fmt(CONTROLS[round.control].max)}</span></div>
+                    <p className="text-xs text-mute mt-3 leading-relaxed">Toggle A (Target) and B (Yours). Drive the control until they match, then check.</p>
+                    {!showAnswer && <button className="btn btn-solid w-full mt-4" onClick={submitMatch} disabled={building}>Check match</button>}
                   </section>
                 )}
+                {!isLearn && round && round.mode !== "match" && <section className="mb-6">{renderOptions()}</section>}
 
-                {/* Reveal (Practice) */}
-                {!isLearn && showAnswer && round && (
+                {isLearn && (
+                  <section className="mb-6"><div className="grid grid-cols-2 sm:grid-cols-3 gap-2">{LEARN_PRESETS.map(p => (<button key={p.key} className={"freq-pill " + (learnKey === p.key ? "selected" : "")} onClick={() => learnPick(p.key)} disabled={!audioReady}><div className="label" style={{ fontSize: 13 }}>{p.label}</div></button>))}</div></section>
+                )}
+
+                {/* Reveal — multiple choice modes */}
+                {!isLearn && showAnswer && round && round.mode !== "match" && (
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
-                    <div className="flex items-center justify-between mb-2">
-                      <div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? "✓ Correct" : "✗ Not quite"}</div>
-                      <div className="font-mono text-xs text-mute">{revealHeadline()}</div>
-                    </div>
+                    <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? "✓ Correct" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{revealHeadline()}</div></div>
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
-                    {round.mode === "whatChanged" && (
-                      <div className="flex items-center gap-6 font-mono text-xs mb-2">
-                        <span className="text-mute">{CAP(round.detail.param)}</span>
-                        <span className="text-ink">A {paramVal(round.presetA, round.detail.param)}</span>
-                        <span className="text-ink-3">→</span>
-                        <span className="text-ink" style={{ color: "var(--accent)" }}>B {paramVal(round.presetB, round.detail.param)}</span>
-                      </div>
-                    )}
-                    {round.mode === "detect" && (
-                      <div className="font-mono text-xs text-mute">Peak GR on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>
-                    )}
+                    {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
+                    {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak GR on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
+                    <button className="btn btn-solid w-full mt-4" onClick={nextRound}>Next</button>
+                  </section>
+                )}
+                {/* Reveal — match */}
+                {!isLearn && showAnswer && round && round.mode === "match" && matchResult && (
+                  <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
+                    <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? (matchResult.tight ? "✓ Spot on" : "✓ Close enough") : "✗ Off the mark"}</div></div>
+                    <div className="flex items-center gap-4 font-mono text-xs mb-3"><span className="text-mute">{CAP(round.control)}</span><span style={{ color: "var(--accent)" }}>Target {CONTROLS[round.control].fmt(matchResult.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">Yours {CONTROLS[round.control].fmt(matchResult.value)}</span></div>
+                    <p className="text-sm text-ink-2 leading-relaxed">{MATCH_TIP[round.control]}</p>
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>Next</button>
                   </section>
                 )}
 
-                {/* Learn readout */}
                 {isLearn && learnData && (
-                  <section className="card-dark p-5 mb-6">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="font-display font-bold text-base">{learnData.label}</div>
-                      <div className="font-mono text-xs text-mute">{learnData.preset ? ("typical GR ≈ " + Math.round(learnData.gr) + " dB") : "Bypassed"}</div>
-                    </div>
-                    <p className="text-sm text-ink-2 leading-relaxed mb-4">{learnData.cue}</p>
-                    <SettingsReadout preset={learnData.preset} />
-                  </section>
+                  <section className="card-dark p-5 mb-6"><div className="flex items-center justify-between mb-3"><div className="font-display font-bold text-base">{learnData.label}</div><div className="font-mono text-xs text-mute">{learnData.preset ? ("typical GR ≈ " + Math.round(learnData.gr) + " dB") : "Bypassed"}</div></div><p className="text-sm text-ink-2 leading-relaxed mb-4">{learnData.cue}</p><SettingsReadout preset={learnData.preset} /></section>
                 )}
 
-                {/* Scope — reveal / learn only (it shows the answer) */}
                 <section className="card p-5">
-                  <div className="flex items-center justify-between mb-3">
-                    <div className="eyebrow">Transient Scope</div>
-                    <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span style={{ color: "var(--ink-3)" }}>A</span><span style={{ color: "var(--accent)" }}>B</span></div>
-                  </div>
-                  {showVisuals ? (
-                    <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} />
-                  ) : (
-                    <div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden during the question. Trust your ears.</div>
-                  )}
-                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Gold is B. Compare the transients and the body against A.</p>}
+                  <div className="flex items-center justify-between mb-3"><div className="eyebrow">Transient Scope</div><div className="font-mono text-[10px] text-mute flex items-center gap-3"><span style={{ color: "var(--ink-3)" }}>{roles.A}</span><span style={{ color: "var(--accent)" }}>{roles.B}</span></div></div>
+                  {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden during the question. Trust your ears.</div>)}
+                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Gold is {roles.B}. Compare the transients and the body against {roles.A}.</p>}
                 </section>
               </div>
 
-              {/* RIGHT RAIL */}
               <aside className="bench-right">
                 {!isLearn && (
                   <section className="card p-5 sm:p-6">
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="eyebrow">Session</div>
-                      {streak >= 3 && (<div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--accent)" }}>Streak · {streak}</div>)}
-                    </div>
-                    <div className="grid grid-cols-2 gap-4">
-                      <Metric label="Round" value={roundNum} />
-                      <Metric label="Streak" value={streak} sub={bestStreak > 0 ? "best " + bestStreak : null} />
-                      <Metric label="Score" value={percent(sessionCorrect, sessionTotal)} sub={sessionTotal > 0 ? sessionCorrect + " of " + sessionTotal : null} />
-                    </div>
-                    <div className="mt-5">
-                      <div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div>
-                      <AccuracyMeter value={sessionPct} />
-                    </div>
+                    <div className="flex items-center justify-between mb-4"><div className="eyebrow">Session</div>{streak >= 3 && (<div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--accent)" }}>Streak · {streak}</div>)}</div>
+                    <div className="grid grid-cols-2 gap-4"><Metric label="Round" value={roundNum} /><Metric label="Streak" value={streak} sub={bestStreak > 0 ? "best " + bestStreak : null} /><Metric label="Score" value={percent(sessionCorrect, sessionTotal)} sub={sessionTotal > 0 ? sessionCorrect + " of " + sessionTotal : null} /></div>
+                    <div className="mt-5"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
                   </section>
                 )}
-                <section className="card p-5 sm:p-6">
-                  <GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} />
-                  <p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p>
-                </section>
-                {!isMobile() && (
-                  <section className="pt-2">
-                    <div className="flex flex-col gap-2 text-xs font-mono text-mute">
-                      <div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div>
-                      <div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div>
-                      <div><kbd className="border rule px-1.5 py-0.5">1</kbd>–<kbd className="border rule px-1.5 py-0.5">4</kbd> Answer</div>
-                      <div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Next</div>
-                    </div>
-                  </section>
-                )}
+                <section className="card p-5 sm:p-6"><GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p></section>
+                {!isMobile() && (<section className="pt-2"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
               </aside>
 
-              {/* MOBILE DOCK */}
               <div className="transport-dock">
                 <button className="dock-play" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={18} /></button>
-                <div className="dock-chans">
-                  {["A", "B"].map(ch => { const active = listenCh === ch; return (
-                    <button key={ch} className={"dock-chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}>
-                      <span className="letter">{ch}</span><span className="role">{CHANNEL_ROLES[ch]}</span>
-                    </button>); })}
-                </div>
+                <div className="dock-chans">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"dock-chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><span className="letter">{ch}</span><span className="role">{roles[ch]}</span></button>); })}</div>
               </div>
             </div>
           </main>
 
-          {/* FOOTER */}
           <footer className="border-t rule mt-auto">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
-              <div className="flex items-center gap-3 text-xs font-mono text-mute">
-                <span className={"w-2 h-2 rounded-full " + (audioReady ? "bg-green" : "bg-mute")}></span>
-                <span>{audioReady ? (isPlaying ? "Playing" : "Ready") : "Not ready"}</span>
-                <span className="opacity-40">·</span>
-                <span>{audioSource === "groove" ? "Synth Groove" : (customFileName || "Custom")}</span>
-              </div>
+              <div className="flex items-center gap-3 text-xs font-mono text-mute"><span className={"w-2 h-2 rounded-full " + (audioReady ? "bg-green" : "bg-mute")}></span><span>{audioReady ? (isPlaying ? "Playing" : "Ready") : "Not ready"}</span><span className="opacity-40">·</span><span>{SOURCES[audioSource] ? SOURCES[audioSource].label : (customFileName || "Custom")}</span></div>
               <div className="text-xs font-mono text-mute hidden sm:block">Best with studio monitors or headphones</div>
             </div>
           </footer>
 
-          {/* SETTINGS DRAWER */}
           {showDrawer && (
             <div className="mobile-drawer open">
-              <div className="flex items-center justify-between p-5 border-b rule"><div className="eyebrow">Source</div><button className="btn btn-ghost" onClick={() => setShowDrawer(false)} aria-label="Close"><CloseGlyph /></button></div>
-              <div className="p-5 flex flex-col gap-4 overflow-y-auto">
-                <p className="text-sm text-mute leading-relaxed">Compression is most audible on dynamic material. The default is a synthesized 2-bar groove. You can also train against your own loop.</p>
-                <button className="btn btn-ghost w-full" onClick={() => { restoreGroove(); }} disabled={!audioReady}>Use synth groove</button>
-                <label className="btn btn-ghost w-full" style={{ cursor: "pointer" }}>Upload WAV loop<input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files && e.target.files[0]) { onUploadFile(e.target.files[0]); setShowDrawer(false); } }} /></label>
-                <div className="font-mono text-xs text-mute">Current: {audioSource === "groove" ? "Synth Groove" : (customFileName || "Custom")}</div>
+              <div className="flex items-center justify-between p-5 border-b rule"><div className="eyebrow">Custom exercise</div><button className="btn btn-ghost" onClick={() => setShowDrawer(false)} aria-label="Close"><CloseGlyph /></button></div>
+              <div className="p-5 flex flex-col gap-6 overflow-y-auto">
+                <div>
+                  <div className="eyebrow mb-2">Source</div>
+                  <p className="text-xs text-mute leading-relaxed mb-3">Transient material (drums) suits attack and release. Sustained material (bass) suits threshold and level.</p>
+                  <Seg options={[{ value: "drums", label: "Drums" }, { value: "bass", label: "Bass" }]} value={config.source === "custom" ? null : config.source} onChange={(v) => setCfg({ source: v })} disabled={!audioReady} />
+                  <label className="btn btn-ghost w-full mt-3" style={{ cursor: "pointer" }}>Upload WAV loop<input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files && e.target.files[0]) { onUploadFile(e.target.files[0]); setShowDrawer(false); } }} /></label>
+                  {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
+                </div>
+                <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /></div>
+                <div><div className="eyebrow mb-2">What changed: options</div><Seg options={[{ value: 2, label: "Attack / Release" }, { value: 4, label: "All four" }]} value={config.whatChangedPool} onChange={(v) => setCfg({ whatChangedPool: v })} disabled={!audioReady} /></div>
+                <div><div className="eyebrow mb-2">Match: control</div><Seg options={[{ value: "random", label: "Random" }, { value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchControl} onChange={(v) => setCfg({ matchControl: v })} disabled={!audioReady} /></div>
               </div>
             </div>
           )}
         </div>
       );
     }
+
+    function paramValOf(preset, p) { if (!preset) return "—"; if (p === "attack") return fmtMs(preset.attack); if (p === "release") return fmtMs(preset.release); if (p === "ratio") return preset.ratio + ":1"; if (p === "threshold") return preset.threshold + " dB"; return ""; }
 
     const root = ReactDOM.createRoot(document.getElementById("app"));
     root.render(<App />);
