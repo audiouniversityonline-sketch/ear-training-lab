@@ -586,11 +586,11 @@
     const { useEffect, useState, useRef, useCallback, useMemo } = React;
 
     /* ============================================================
-       COMPRESSION EAR TRAINER — objective, configurable
-       Modes (ears-only during the question):
+       COMPRESSION EAR TRAINER — objective, configurable, with a
+       guided Levels curriculum (saved progress) plus free Practice
+       and a Learn free-dial.
          Detect, Attack/Release, What changed, Match
-       Match ramp: Learn free-dial (explore) -> stepped Match on Easy
-       (pick among notches) -> continuous Match on Medium/Hard.
+       Match ramp: Easy two-way pick -> Medium 4 steps -> Hard freehand.
        Sources: drum groove (transient) + bass riff (sustained) + upload.
        Two compressors, each loudness-matched, so level is never the tell.
        ============================================================ */
@@ -657,6 +657,24 @@
       match: { label: "Match", prompt: "", blurb: "A is the target. Match it on B. Easy is a two-way pick, Medium gives more steps, Hard is freehand." },
     };
     const MODE_ORDER = ["detect", "time", "whatChanged", "match"];
+
+    // Guided curriculum. Each level fixes a mode, source, and difficulty, and passes at need/of.
+    const LEVELS = [
+      { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
+      { id: "c3", title: "Fast or slow", mode: "time", source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c4", title: "Read the move", mode: "time", source: "drums", difficulty: "hard", need: 7, of: 10 },
+      { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
+      { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
+      { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c8", title: "Match: stepped", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
+      { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
+      { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
+      { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", matchControl: "threshold", need: 6, of: 8 },
+    ];
+    const LEVELS_KEY = "au_comp_levels_v1";
+    const loadPassed = () => { try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}") || {}; } catch (e) { return {}; } };
+    const savePassed = (p) => { try { localStorage.setItem(LEVELS_KEY, JSON.stringify(p)); } catch (e) {} };
 
     const ctrlValueAt = (control, pos) => {
       const s = CONTROLS[control]; pos = Math.max(0, Math.min(1, pos));
@@ -740,6 +758,7 @@
       return await oc.startRendering();
     }
     const SOURCES = { drums: { label: "Drums", render: renderDrums }, bass: { label: "Bass", render: renderBass } };
+    const levelMeta = (lv) => MODES[lv.mode].label + " · " + (SOURCES[lv.source] ? SOURCES[lv.source].label : lv.source) + " · " + CAP(lv.difficulty);
 
     async function renderWet(dryBuffer, preset) {
       const oc = new OfflineAudioContext(dryBuffer.numberOfChannels, dryBuffer.length, dryBuffer.sampleRate);
@@ -756,19 +775,16 @@
       return env;
     }
     const maxOf = (arr) => Math.max.apply(null, arr.concat([1e-4]));
-    // Loudness-match lookup across a control's range — shared by Match and the Learn dial.
     async function buildLookupFor(buf, dryRms, control, n) {
       const lk = [];
       for (let i = 0; i < n; i++) { const p = i / (n - 1), v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: clampMakeup(dryRms / (bufferRms(wet) || 1e-6)) }); }
       return lk;
     }
-    // Lookup at explicit positions — lets stepped Match vary its notch values per round.
     async function buildLookupAt(buf, dryRms, control, positions) {
       const lk = [];
       for (let i = 0; i < positions.length; i++) { const p = positions[i], v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: clampMakeup(dryRms / (bufferRms(wet) || 1e-6)) }); }
       return lk;
     }
-    // Random, sorted notch positions with a strong gap — different values every round.
     function pickNotchPositions(N) {
       if (N <= 2) { const lo = 0.05 + Math.random() * 0.23, hi = 0.72 + Math.random() * 0.23; return [lo, hi]; }
       const start = Math.random() * 0.15, end = 0.85 + Math.random() * 0.15, step = (end - start) / (N - 1), jit = step * 0.2, pos = [];
@@ -847,6 +863,8 @@
       const learnLookupRef = useRef(null);
       const learnTimerRef = useRef(null);
       const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchControl: "random" });
+      const levelCfgRef = useRef(null);     // active level's config, overrides configRef while playing a level
+      const loadedSourceRef = useRef("drums");
 
       const [audioReady, setAudioReady] = useState(false);
       const [audioLoading, setAudioLoading] = useState(false);
@@ -854,7 +872,14 @@
       const [isPlaying, setIsPlaying] = useState(false);
       const [listenCh, setListenCh] = useState("A");
 
-      const [isLearn, setIsLearn] = useState(false);
+      const [area, setArea] = useState("levels");   // levels | practice | learn
+      const isLearn = area === "learn";
+      const [activeLevel, setActiveLevel] = useState(null);
+      const [levelAnswered, setLevelAnswered] = useState(0);
+      const [levelCorrect, setLevelCorrect] = useState(0);
+      const [levelResult, setLevelResult] = useState(null);
+      const [passedLevels, setPassedLevels] = useState(loadPassed);
+
       const [mode, setMode] = useState("detect");
       const [round, setRound] = useState(null);
       const [building, setBuilding] = useState(false);
@@ -883,7 +908,11 @@
       const [showDrawer, setShowDrawer] = useState(false);
 
       const showVisuals = showAnswer || isLearn;
+      const inLevelMenu = area === "levels" && (!activeLevel || !!levelResult);
       const roles = isLearn ? { A: "Dry", B: "Yours" } : (round && round.mode === "match") ? { A: "Target", B: "Yours" } : { A: "Channel A", B: "Channel B" };
+      const passedCount = Object.keys(passedLevels).filter(k => LEVELS.some(l => l.id === k)).length;
+      const levelUnlocked = (i) => i === 0 || !!passedLevels[LEVELS[i - 1].id];
+      const levelIndex = activeLevel ? LEVELS.findIndex(l => l.id === activeLevel.id) : -1;
 
       const measure = async (preset) => {
         const buf = srcBufRef.current;
@@ -923,7 +952,7 @@
       const toggleAudio = async () => { const ctx = ctxRef.current; if (!ctx) return; if (ctx.state === "running") { await ctx.suspend(); setIsPlaying(false); } else { await ctx.resume(); setIsPlaying(true); } };
 
       const buildRound = async (m) => {
-        const cfg = configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryRms = dryRmsRef.current;
+        const cfg = levelCfgRef.current || configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryRms = dryRmsRef.current;
         if (m === "match") {
           const control = cfg.matchControl === "random" ? ["attack", "release", "threshold", "ratio"][Math.floor(Math.random() * 4)] : cfg.matchControl;
           const steps = MATCH_STEPS[diff];
@@ -985,12 +1014,18 @@
       const updateMatchLive = (pos) => { const ns = nodesRef.current; if (!ns || !round || round.mode !== "match" || round.stepped) return; setComp(ns.compB, { ...BASE, [round.control]: ctrlValueAt(round.control, pos) }, ns.makeupB, interpMakeup(round.lookup, pos)); };
       const updateMatchStep = (index) => { const ns = nodesRef.current; if (!ns || !round || !round.stepped) return; setComp(ns.compB, { ...BASE, [round.control]: round.notches[index] }, ns.makeupB, round.lookup[index].makeup); };
 
+      const markPassed = (id) => { setPassedLevels(prev => { const next = { ...prev, [id]: true }; savePassed(next); return next; }); };
+      const recordResult = (correct) => {
+        setSessionTotal(t => t + 1);
+        if (correct) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
+        if (area === "levels" && activeLevel) { setLevelAnswered(a => a + 1); if (correct) setLevelCorrect(c => c + 1); }
+      };
+
       const submitAnswer = (key) => {
         if (isLearn || !round || showAnswer || building || round.mode === "match") return;
         const correct = key === round.answer;
         setSelected(key); setShowAnswer(true); setLastCorrect(correct);
-        setSessionTotal(t => t + 1);
-        if (correct) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
+        recordResult(correct);
       };
 
       const submitMatch = async () => {
@@ -998,14 +1033,21 @@
         let value, target, within, tight;
         if (round.stepped) { value = round.notches[matchIndex]; target = round.notches[round.targetIndex]; const diff = Math.abs(matchIndex - round.targetIndex); within = round.steps <= 2 ? diff === 0 : diff <= 1; tight = diff === 0; }
         else { value = ctrlValueAt(round.control, matchPos); target = round.target; const spec = MATCH_TOL[round.control]; if (spec.type === "lin") { const err = Math.abs(value - target); within = err <= round.tol; tight = err <= round.tol * 0.5; } else { const f = Math.max(value / target, target / value); within = f <= round.tol; tight = f <= 1 + (round.tol - 1) * 0.5; } }
-        setSessionTotal(n => n + 1);
-        if (within) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
         setMatchResult({ value, target, within, tight }); setSelected("done"); setShowAnswer(true); setLastCorrect(within);
+        recordResult(within);
         try { const buf = srcBufRef.current, mk = round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos); const wetY = await renderWet(buf, { ...BASE, [round.control]: value }); const envY = envelopeOf(wetY, ENV_POINTS, mk); setMatchScope({ envA: round.envTarget, envB: envY, envMax: Math.max(maxOf(round.envTarget), maxOf(envY)) }); } catch (e) {}
       };
 
-      const nextRound = () => { setRoundNum(n => n + 1); newRound(); };
-      const changeMode = (m) => { if (m === mode) return; setMode(m); if (!isLearn) newRound(m); };
+      const nextRound = () => {
+        if (area === "levels" && activeLevel && levelAnswered >= activeLevel.of) {
+          const passed = levelCorrect >= activeLevel.need;
+          if (passed) markPassed(activeLevel.id);
+          setLevelResult({ passed, correct: levelCorrect, of: activeLevel.of });
+          return;
+        }
+        setRoundNum(n => n + 1); newRound();
+      };
+      const changeMode = (m) => { if (m === mode) return; setMode(m); if (area === "practice") newRound(m); };
 
       /* ----- learn free-dial ----- */
       const renderLearnScope = async (control, pos, lookup) => {
@@ -1025,13 +1067,17 @@
         if (listenCh !== "B") switchToChannel("B");
         clearTimeout(learnTimerRef.current); learnTimerRef.current = setTimeout(() => renderLearnScope(learnControl, pos, lk), 150);
       };
-      const enterLearn = () => { setIsLearn(true); setShowAnswer(false); pickLearnControl(learnControl); };
-      const exitLearn = () => { setIsLearn(false); newRound(); };
+      const clearLevel = () => { levelCfgRef.current = null; setActiveLevel(null); setLevelResult(null); };
+      const enterLearn = () => { setArea("learn"); clearLevel(); setShowAnswer(false); pickLearnControl(learnControl); };
+      const goPractice = () => { setArea("practice"); clearLevel(); newRound(mode); };
+      const goLevels = () => { setArea("levels"); clearLevel(); setShowAnswer(false); };
 
       /* ----- config / sources ----- */
       const switchSource = async (key) => { const ctx = ctxRef.current; if (!ctx) return; const buf = key === "custom" ? customBufRef.current : (SOURCES[key] ? await SOURCES[key].render(ctx.sampleRate) : null); if (!buf) return; await rebuildFromBuffer(buf, key); };
       const setCfg = (patch) => {
         const next = { ...configRef.current, ...patch }; configRef.current = next; setConfig(next);
+        // Changing custom settings drops you into Practice (levels are fixed exercises).
+        if (activeLevel) { clearLevel(); setArea("practice"); }
         if (patch.source) switchSource(patch.source); else if (isLearn) pickLearnControl(learnControl); else newRound();
       };
 
@@ -1040,7 +1086,7 @@
         setAudioLoading(true); setAudioError(null);
         try {
           const Ctx = window.AudioContext || window.webkitAudioContext; const ctx = new Ctx(); await ctx.resume(); ctxRef.current = ctx;
-          const buffer = await SOURCES[configRef.current.source].render(ctx.sampleRate); primeFromBuffer(buffer);
+          const buffer = await SOURCES[configRef.current.source].render(ctx.sampleRate); primeFromBuffer(buffer); loadedSourceRef.current = configRef.current.source;
           buildGraph(buffer); await ctx.suspend();
           setAudioReady(true); setAudioLoading(false); newRound("detect");
         } catch (e) { console.error(e); setAudioError((e && e.message) || "Audio init failed"); setAudioLoading(false); }
@@ -1050,20 +1096,35 @@
         try {
           if (nodesRef.current) { try { nodesRef.current.src.stop(); } catch (e) {} }
           primeFromBuffer(buffer); buildGraph(buffer); if (ctx.state !== "running") await ctx.suspend();
-          setAudioSource(label); if (label === "custom") setCustomFileName(fileName || customFileName || "");
+          setAudioSource(label); loadedSourceRef.current = label; if (label === "custom") setCustomFileName(fileName || customFileName || "");
           if (isLearn) pickLearnControl(learnControl); else newRound();
         } catch (e) { console.error(e); setAudioError("Could not load that file."); }
       };
       const onUploadFile = async (file) => {
         const ctx = ctxRef.current; if (!ctx || !file) return;
-        try { const buf = await file.arrayBuffer(); const decoded = await ctx.decodeAudioData(buf); customBufRef.current = decoded; configRef.current = { ...configRef.current, source: "custom" }; setConfig(configRef.current); await rebuildFromBuffer(decoded, "custom", file.name); }
+        try { const buf = await file.arrayBuffer(); const decoded = await ctx.decodeAudioData(buf); customBufRef.current = decoded; configRef.current = { ...configRef.current, source: "custom" }; setConfig(configRef.current); clearLevel(); setArea("practice"); await rebuildFromBuffer(decoded, "custom", file.name); }
         catch (e) { console.error(e); setAudioError("Could not decode that audio file."); }
       };
+
+      const startLevel = async (lv) => {
+        const ctx = ctxRef.current; if (!ctx) return;
+        if (loadedSourceRef.current !== lv.source && SOURCES[lv.source]) {
+          if (nodesRef.current) { try { nodesRef.current.src.stop(); } catch (e) {} }
+          const buffer = await SOURCES[lv.source].render(ctx.sampleRate); primeFromBuffer(buffer); buildGraph(buffer);
+          if (ctx.state !== "running") await ctx.suspend();
+          loadedSourceRef.current = lv.source; setAudioSource(lv.source);
+        }
+        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, matchControl: lv.matchControl || "random" };
+        setActiveLevel(lv); setLevelAnswered(0); setLevelCorrect(0); setLevelResult(null);
+        setArea("levels"); setMode(lv.mode); newRound(lv.mode);
+      };
+      const backToLevels = () => { clearLevel(); setShowAnswer(false); };
 
       useEffect(() => {
         if (!audioReady) return;
         const onKey = (e) => {
           if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA")) return;
+          if (inLevelMenu) return;
           const k = e.key.toLowerCase();
           if (e.key === " ") { e.preventDefault(); toggleAudio(); return; }
           if (k === "a") { switchToChannel("A"); return; }
@@ -1076,7 +1137,7 @@
           }
         };
         window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-      }, [audioReady, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, learnControl, learnPos]);
+      }, [audioReady, area, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, learnControl, learnPos, activeLevel, levelAnswered, levelCorrect, inLevelMenu]);
 
       const renderOptions = () => {
         if (!round || round.mode === "match") return null;
@@ -1098,6 +1159,7 @@
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, envMax: round.envMax } : null));
       const scopeA = scopeSrc && scopeSrc.envA, scopeB = scopeSrc && scopeSrc.envB, scopeMax = scopeSrc && scopeSrc.envMax;
+      const nextLevel = levelIndex >= 0 ? LEVELS[levelIndex + 1] : null;
 
       return (
         <div className="min-h-screen flex flex-col">
@@ -1111,7 +1173,11 @@
               </div>
               <div className="flex items-center gap-2">
                 <a href="full.html" className="btn btn-ghost" aria-label="EQ Trainer">EQ</a>
-                <div className="seg" aria-label="Practice or Learn"><button className={!isLearn ? "active" : ""} onClick={() => { if (isLearn) exitLearn(); }} disabled={!audioReady}>Practice</button><button className={isLearn ? "active" : ""} onClick={() => { if (!isLearn) enterLearn(); }} disabled={!audioReady}>Learn</button></div>
+                <div className="seg" aria-label="Area">
+                  <button className={area === "levels" ? "active" : ""} onClick={goLevels} disabled={!audioReady}>Levels</button>
+                  <button className={area === "practice" ? "active" : ""} onClick={goPractice} disabled={!audioReady}>Practice</button>
+                  <button className={area === "learn" ? "active" : ""} onClick={enterLearn} disabled={!audioReady}>Learn</button>
+                </div>
                 <button onClick={() => setShowDrawer(true)} className="btn btn-ghost" aria-label="Custom exercise"><GearGlyph /></button>
               </div>
             </div>
@@ -1122,16 +1188,56 @@
               <aside className="bench-left">
                 <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><a href="full.html" className="btn btn-ghost w-full mb-2">EQ Trainer</a><button className="btn btn-solid w-full" disabled>Compression</button></div>
                 <div className="rail-panel">
-                  <div className="eyebrow mb-2">{isLearn ? "Learn" : "Mode"}</div>
-                  <div className="font-display font-semibold text-base leading-snug mb-2">{isLearn ? "Explore the controls" : MODES[mode].label}</div>
-                  <p className="text-xs text-ink-2 leading-relaxed mb-3">{isLearn ? "Sweep any control against the dry reference and hear its full range. No scoring." : MODES[mode].blurb}</p>
-                  <div className="font-mono text-[10px] text-mute pt-3 border-t rule">Source: {SOURCES[config.source] ? SOURCES[config.source].label : "Custom"} · {CAP(config.difficulty)}</div>
-                  <button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Custom exercise</button>
+                  <div className="eyebrow mb-2">{area === "learn" ? "Learn" : area === "levels" ? "Levels" : "Mode"}</div>
+                  <div className="font-display font-semibold text-base leading-snug mb-2">{area === "learn" ? "Explore the controls" : area === "levels" ? (activeLevel ? activeLevel.title : "Guided path") : MODES[mode].label}</div>
+                  <p className="text-xs text-ink-2 leading-relaxed mb-3">{area === "learn" ? "Sweep any control against the dry reference and hear its full range. No scoring." : area === "levels" ? (activeLevel ? levelMeta(activeLevel) : "Work the levels in order. Each one unlocks the next.") : MODES[mode].blurb}</p>
+                  {area === "levels" && activeLevel && (<button onClick={backToLevels} className="btn btn-ghost w-full mb-2">All levels</button>)}
+                  <div className="font-mono text-[10px] text-mute pt-3 border-t rule">{area === "levels" ? ("Progress: " + passedCount + " / " + LEVELS.length + " passed") : ("Source: " + (SOURCES[config.source] ? SOURCES[config.source].label : "Custom") + " · " + CAP(config.difficulty))}</div>
+                  {area !== "levels" && (<button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Custom exercise</button>)}
                 </div>
               </aside>
 
               <div className="bench-center">
-                {!isLearn && (<section className="mb-6"><div className="eyebrow mb-3">Mode</div><div className="seg flex-wrap">{MODE_ORDER.map(m => (<button key={m} className={mode === m ? "active" : ""} onClick={() => changeMode(m)} disabled={!audioReady}>{MODES[m].label}</button>))}</div></section>)}
+                {area === "levels" && !activeLevel ? (
+                  <section>
+                    <div className="flex items-center justify-between mb-3"><div className="eyebrow">Levels</div><div className="font-mono text-[10px] text-mute">{passedCount} / {LEVELS.length} passed</div></div>
+                    <div className="flex flex-col gap-2">
+                      {LEVELS.map((lv, i) => {
+                        const passed = !!passedLevels[lv.id], unlocked = levelUnlocked(i);
+                        return (
+                          <button key={lv.id} className="week-card" style={{ minHeight: 0, opacity: unlocked ? 1 : 0.4, cursor: unlocked ? "pointer" : "not-allowed", borderColor: passed ? "var(--accent)" : undefined }} disabled={!unlocked || !audioReady} onClick={() => unlocked && startLevel(lv)}>
+                            <div className="flex items-center justify-between gap-3 w-full">
+                              <div style={{ minWidth: 0 }}>
+                                <div className="num" style={passed ? { color: "var(--accent)", opacity: 1 } : {}}>Level {i + 1}{passed ? " · ✓ Passed" : unlocked ? "" : " · Locked"}</div>
+                                <div className="title">{lv.title}</div>
+                              </div>
+                              <div className="meta" style={{ marginTop: 0, textAlign: "right", flexShrink: 0 }}>{levelMeta(lv)}</div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </section>
+                ) : area === "levels" && levelResult ? (
+                  <section className={"card-dark p-6 fade-up " + (levelResult.passed ? "feedback-correct" : "")}>
+                    <div className="eyebrow mb-2">Level {levelIndex + 1} · {activeLevel.title}</div>
+                    <h2 className="font-display font-bold text-2xl mb-2" style={{ color: levelResult.passed ? "var(--green)" : "var(--hot)" }}>{levelResult.passed ? "✓ Level passed" : "Not yet"}</h2>
+                    <p className="text-sm text-ink-2 mb-5">{levelResult.correct} of {levelResult.of} correct{levelResult.passed ? "." : ". You need " + activeLevel.need + " to pass."}</p>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      {levelResult.passed && nextLevel && (<button className="btn btn-solid flex-1" onClick={() => startLevel(nextLevel)}>Next level</button>)}
+                      <button className={"btn flex-1 " + (levelResult.passed ? "btn-ghost" : "btn-solid")} onClick={() => startLevel(activeLevel)}>{levelResult.passed ? "Replay" : "Try again"}</button>
+                      <button className="btn btn-ghost flex-1" onClick={backToLevels}>All levels</button>
+                    </div>
+                  </section>
+                ) : (
+                <>
+                {area === "practice" && (<section className="mb-6"><div className="eyebrow mb-3">Mode</div><div className="seg flex-wrap">{MODE_ORDER.map(m => (<button key={m} className={mode === m ? "active" : ""} onClick={() => changeMode(m)} disabled={!audioReady}>{MODES[m].label}</button>))}</div></section>)}
+                {area === "levels" && activeLevel && (
+                  <section className="mb-6">
+                    <div className="flex items-center justify-between mb-2"><div className="eyebrow">Level {levelIndex + 1} · {activeLevel.title}</div><div className="font-mono text-[10px] text-mute">{Math.min(levelAnswered + 1, activeLevel.of)} / {activeLevel.of} · {levelCorrect} correct · need {activeLevel.need}</div></div>
+                    <div className="tick-row">{Array.from({ length: activeLevel.of }, (_, i) => (<div key={i} className={"tick " + (i < levelAnswered ? "filled" : i === levelAnswered ? "current" : "")} />))}</div>
+                  </section>
+                )}
 
                 <section className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: "relative" }}>
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
@@ -1183,7 +1289,7 @@
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
                     {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
                     {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak GR on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
-                    <button className="btn btn-solid w-full mt-4" onClick={nextRound}>Next</button>
+                    <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
                 {/* Reveal — match */}
@@ -1192,7 +1298,7 @@
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? (matchResult.tight ? "✓ Spot on" : "✓ Close enough") : "✗ Off the mark"}</div></div>
                     <div className="flex items-center gap-4 font-mono text-xs mb-3"><span className="text-mute">{CAP(round.control)}</span><span style={{ color: "var(--accent)" }}>Target {CONTROLS[round.control].fmt(matchResult.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">Yours {CONTROLS[round.control].fmt(matchResult.value)}</span></div>
                     <p className="text-sm text-ink-2 leading-relaxed">{MATCH_TIP[round.control]}</p>
-                    <button className="btn btn-solid w-full mt-4" onClick={nextRound}>Next</button>
+                    <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
 
@@ -1201,24 +1307,28 @@
                   {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden during the question. Trust your ears.</div>)}
                   {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Gold is {roles.B}. Compare the transients and the body against {roles.A}.</p>}
                 </section>
+                </>
+                )}
               </div>
 
               <aside className="bench-right">
-                {!isLearn && (
+                {!isLearn && !inLevelMenu && (
                   <section className="card p-5 sm:p-6">
                     <div className="flex items-center justify-between mb-4"><div className="eyebrow">Session</div>{streak >= 3 && (<div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--accent)" }}>Streak · {streak}</div>)}</div>
                     <div className="grid grid-cols-2 gap-4"><Metric label="Round" value={roundNum} /><Metric label="Streak" value={streak} sub={bestStreak > 0 ? "best " + bestStreak : null} /><Metric label="Score" value={percent(sessionCorrect, sessionTotal)} sub={sessionTotal > 0 ? sessionCorrect + " of " + sessionTotal : null} /></div>
                     <div className="mt-5"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
                   </section>
                 )}
-                <section className="card p-5 sm:p-6"><GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p></section>
-                {!isMobile() && (<section className="pt-2"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
+                {!inLevelMenu && (<section className="card p-5 sm:p-6"><GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p></section>)}
+                {!isMobile() && !inLevelMenu && (<section className="pt-2"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
               </aside>
 
-              <div className="transport-dock">
-                <button className="dock-play" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={18} /></button>
-                <div className="dock-chans">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"dock-chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><span className="letter">{ch}</span><span className="role">{roles[ch]}</span></button>); })}</div>
-              </div>
+              {!inLevelMenu && (
+                <div className="transport-dock">
+                  <button className="dock-play" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={18} /></button>
+                  <div className="dock-chans">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"dock-chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><span className="letter">{ch}</span><span className="role">{roles[ch]}</span></button>); })}</div>
+                </div>
+              )}
             </div>
           </main>
 
@@ -1233,6 +1343,7 @@
             <div className="mobile-drawer open">
               <div className="flex items-center justify-between p-5 border-b rule"><div className="eyebrow">Custom exercise</div><button className="btn btn-ghost" onClick={() => setShowDrawer(false)} aria-label="Close"><CloseGlyph /></button></div>
               <div className="p-5 flex flex-col gap-6 overflow-y-auto">
+                <p className="text-xs text-mute leading-relaxed">Custom settings are for free Practice. Changing one here leaves the current level.</p>
                 <div>
                   <div className="eyebrow mb-2">Source</div>
                   <p className="text-xs text-mute leading-relaxed mb-3">Transient material (drums) suits attack and release. Sustained material (bass) suits threshold and level.</p>
