@@ -600,10 +600,6 @@
     const BASE = { threshold: -28, knee: 6, ratio: 4, attack: 0.02, release: 0.18 };
 
     const clampMakeup = (m) => Math.max(1, Math.min(3.5, m));
-    // Level roving: after loudness-matching, nudge each channel by a small random offset so
-    // overall loudness is never a reliable tell. Forces the ear onto timbre and dynamics.
-    const ROVE_DB = 1.1;
-    const roveGain = () => Math.pow(10, ((Math.random() * 2 - 1) * ROVE_DB) / 20);
     const CAP = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const fmtMs = (s) => Math.round(s * 1000) + " ms";
 
@@ -655,7 +651,7 @@
     };
 
     const MODES = {
-      detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is dry, one is compressed. Levels are matched and slightly roved each round, so loudness is never the tell. Pick the compressed one." },
+      detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is dry, one is compressed, loudness-matched to the same LUFS so level is never the tell. Pick the compressed one." },
       time: { label: "Attack / Release", prompt: "", blurb: "A and B share the same compression except one time constant. Tell which way B moved." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one parameter moved. Name the parameter." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Match it on B. Easy is a two-way pick, Medium gives more steps, Hard is freehand." },
@@ -773,20 +769,45 @@
       return await oc.startRendering();
     }
     function bufferRms(buffer) { const d = buffer.getChannelData(0); let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i]; return Math.sqrt(s / d.length); }
+    // ---- perceived-loudness matching (ITU-R BS.1770 / LUFS): K-weighting + gated mean square ----
+    // Both channels are measured through the identical weighting, so the gain that equalizes this
+    // measure equalizes perceived loudness regardless of frequency content or how the compressor moves.
+    async function kWeight(buffer) {
+      const oc = new OfflineAudioContext(1, buffer.length, buffer.sampleRate);
+      const src = oc.createBufferSource(); src.buffer = buffer;
+      const hp = oc.createBiquadFilter(); hp.type = "highpass"; hp.frequency.value = 38; hp.Q.value = 0.5;
+      const hs = oc.createBiquadFilter(); hs.type = "highshelf"; hs.frequency.value = 1500; hs.gain.value = 4;
+      src.connect(hp).connect(hs).connect(oc.destination); src.start(0);
+      return await oc.startRendering();
+    }
+    function gatedEnergy(kbuf) {
+      const d = kbuf.getChannelData(0), sr = kbuf.sampleRate;
+      const blk = Math.floor(0.4 * sr), hop = Math.floor(0.1 * sr);
+      if (d.length < blk) { let s = 0; for (let i = 0; i < d.length; i++) s += d[i] * d[i]; return s / Math.max(1, d.length); }
+      const en = [];
+      for (let st = 0; st + blk <= d.length; st += hop) { let a = 0; for (let i = st; i < st + blk; i++) a += d[i] * d[i]; en.push(a / blk); }
+      const loud = (e) => -0.691 + 10 * Math.log10(e + 1e-12);
+      let kept = en.filter((e) => loud(e) >= -70); if (!kept.length) kept = en.slice();        // absolute gate
+      const mean = kept.reduce((a, b) => a + b, 0) / kept.length, rel = mean * 0.1;             // relative gate -10 LU
+      let kept2 = kept.filter((e) => e >= rel); if (!kept2.length) kept2 = kept;
+      return kept2.reduce((a, b) => a + b, 0) / kept2.length;
+    }
+    async function loudnessEnergy(buffer) { return gatedEnergy(await kWeight(buffer)) || 1e-9; }
+    async function makeupFor(wetBuf, dryLoudE) { return clampMakeup(Math.sqrt((dryLoudE || 1e-9) / (await loudnessEnergy(wetBuf)))); }
     function envelopeOf(buffer, points, gain) {
       const d = buffer.getChannelData(0), win = Math.max(1, Math.floor(d.length / points)), env = [];
       for (let i = 0; i < points; i++) { let mx = 0; const start = i * win, end = Math.min(d.length, start + win); for (let j = start; j < end; j++) { const a = Math.abs(d[j]); if (a > mx) mx = a; } env.push(mx * (gain || 1)); }
       return env;
     }
     const maxOf = (arr) => Math.max.apply(null, arr.concat([1e-4]));
-    async function buildLookupFor(buf, dryRms, control, n) {
+    async function buildLookupFor(buf, dryLoudE, control, n) {
       const lk = [];
-      for (let i = 0; i < n; i++) { const p = i / (n - 1), v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: clampMakeup(dryRms / (bufferRms(wet) || 1e-6)) }); }
+      for (let i = 0; i < n; i++) { const p = i / (n - 1), v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: await makeupFor(wet, dryLoudE) }); }
       return lk;
     }
-    async function buildLookupAt(buf, dryRms, control, positions) {
+    async function buildLookupAt(buf, dryLoudE, control, positions) {
       const lk = [];
-      for (let i = 0; i < positions.length; i++) { const p = positions[i], v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: clampMakeup(dryRms / (bufferRms(wet) || 1e-6)) }); }
+      for (let i = 0; i < positions.length; i++) { const p = positions[i], v = ctrlValueAt(control, p); const wet = await renderWet(buf, { ...BASE, [control]: v }); lk.push({ pos: p, v, makeup: await makeupFor(wet, dryLoudE) }); }
       return lk;
     }
     function pickNotchPositions(N) {
@@ -844,7 +865,7 @@
       return (
         <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
           <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression Trainer</div></div></div>
-          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Levels are matched and slightly roved each round, so loudness can't give the answer away. The tell is the sound. Best on monitors or headphones.</p>
+          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Both channels are loudness-matched to the same LUFS, so loudness can't give the answer away. The tell is the sound. Best on monitors or headphones.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
           <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Start"}</button>
         </div></div>
@@ -861,6 +882,7 @@
       const srcBufRef = useRef(null);
       const customBufRef = useRef(null);
       const dryRmsRef = useRef(1e-6);
+      const dryLoudRef = useRef(1e-9);
       const dryEnvRef = useRef(null);
       const dryMaxRef = useRef(1e-4);
       const seqRef = useRef(0);
@@ -922,8 +944,7 @@
         const buf = srcBufRef.current;
         if (!preset) return { makeup: 1, env: envelopeOf(buf, ENV_POINTS, 1), gr: 0 };
         const wet = await renderWet(buf, preset);
-        const wetRms = bufferRms(wet) || 1e-6;
-        const makeup = clampMakeup(dryRmsRef.current / wetRms);
+        const makeup = await makeupFor(wet, dryLoudRef.current);
         const env = envelopeOf(wet, ENV_POINTS, makeup), envRaw = envelopeOf(wet, ENV_POINTS, 1);
         const dryEnv = dryEnvRef.current, loud = dryMaxRef.current * 0.5; let gr = 0;
         for (let i = 0; i < ENV_POINTS; i++) { if (dryEnv[i] > loud && dryEnv[i] > 1e-4) { const r = -20 * Math.log10(Math.max(envRaw[i] / dryEnv[i], 1e-4)); if (r > gr) gr = r; } }
@@ -956,7 +977,7 @@
       const toggleAudio = async () => { const ctx = ctxRef.current; if (!ctx) return; if (ctx.state === "running") { await ctx.suspend(); setIsPlaying(false); } else { await ctx.resume(); setIsPlaying(true); } };
 
       const buildRound = async (m) => {
-        const cfg = levelCfgRef.current || configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryRms = dryRmsRef.current;
+        const cfg = levelCfgRef.current || configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryLoudE = dryLoudRef.current;
         if (m === "match") {
           const control = cfg.matchControl === "random" ? ["attack", "release", "threshold", "ratio"][Math.floor(Math.random() * 4)] : cfg.matchControl;
           const steps = MATCH_STEPS[diff];
@@ -964,15 +985,15 @@
             const N = steps;
             const targetIndex = Math.floor(Math.random() * N);
             const startIndex = targetIndex < N / 2 ? N - 1 : 0;
-            const lookup = await buildLookupAt(buf, dryRms, control, pickNotchPositions(N)), notches = lookup.map(x => x.v);
+            const lookup = await buildLookupAt(buf, dryLoudE, control, pickNotchPositions(N)), notches = lookup.map(x => x.v);
             const wetT = await renderWet(buf, { ...BASE, [control]: notches[targetIndex] }); const envTarget = envelopeOf(wetT, ENV_POINTS, lookup[targetIndex].makeup);
             return { mode: "match", control, stepped: true, steps: N, notches, targetIndex, startIndex, lookup, target: notches[targetIndex], envTarget, prompt: "Match A's " + control + " on B" };
           }
           const targetPos = 0.2 + Math.random() * 0.6, target = ctrlValueAt(control, targetPos);
           const off = 0.32 + Math.random() * 0.2, dir = Math.random() < 0.5 ? -1 : 1;
           let startPos = targetPos + dir * off; if (startPos < 0.05 || startPos > 0.95) startPos = targetPos - dir * off; startPos = Math.max(0.05, Math.min(0.95, startPos));
-          const lookup = await buildLookupFor(buf, dryRms, control, 7);
-          const wetT = await renderWet(buf, { ...BASE, [control]: target }); const makeupTarget = clampMakeup(dryRms / (bufferRms(wetT) || 1e-6)); const envTarget = envelopeOf(wetT, ENV_POINTS, makeupTarget);
+          const lookup = await buildLookupFor(buf, dryLoudE, control, 7);
+          const wetT = await renderWet(buf, { ...BASE, [control]: target }); const makeupTarget = await makeupFor(wetT, dryLoudE); const envTarget = envelopeOf(wetT, ENV_POINTS, makeupTarget);
           const tolSpec = MATCH_TOL[control], mul = DIFF_TOLMUL[diff]; const tol = tolSpec.type === "lin" ? tolSpec.base * mul : 1 + (tolSpec.base - 1) * mul;
           return { mode: "match", control, stepped: false, target, targetPos, startPos, lookup, makeupTarget, envTarget, tol, presetTarget: { ...BASE, [control]: target }, prompt: "Match A's " + control + " on B" };
         }
@@ -998,7 +1019,7 @@
         }
         const a = await measure(presetA), b = await measure(presetB);
         const envMax = Math.max(maxOf(a.env), maxOf(b.env));
-        return { mode: m, presetA, presetB, makeupA: a.makeup, makeupB: b.makeup, roveA: roveGain(), roveB: roveGain(), envA: a.env, envB: b.env, grA: a.gr, grB: b.gr, envMax, answer, options, prompt, detail };
+        return { mode: m, presetA, presetB, makeupA: a.makeup, makeupB: b.makeup, envA: a.env, envB: b.env, grA: a.gr, grB: b.gr, envMax, answer, options, prompt, detail };
       };
 
       const newRound = async (m) => {
@@ -1011,7 +1032,7 @@
         if (r.mode === "match") {
           if (r.stepped) { setComp(ns.compA, { ...BASE, [r.control]: r.notches[r.targetIndex] }, ns.makeupA, r.lookup[r.targetIndex].makeup); setMatchIndex(r.startIndex); setComp(ns.compB, { ...BASE, [r.control]: r.notches[r.startIndex] }, ns.makeupB, r.lookup[r.startIndex].makeup); }
           else { setComp(ns.compA, r.presetTarget, ns.makeupA, r.makeupTarget); setMatchPos(r.startPos); setComp(ns.compB, { ...BASE, [r.control]: ctrlValueAt(r.control, r.startPos) }, ns.makeupB, interpMakeup(r.lookup, r.startPos)); }
-        } else { setComp(ns.compA, r.presetA, ns.makeupA, r.makeupA * (r.roveA || 1)); setComp(ns.compB, r.presetB, ns.makeupB, r.makeupB * (r.roveB || 1)); }
+        } else { setComp(ns.compA, r.presetA, ns.makeupA, r.makeupA); setComp(ns.compB, r.presetB, ns.makeupB, r.makeupB); }
         switchToChannel("A"); setBuilding(false);
       };
 
@@ -1059,7 +1080,7 @@
       };
       const pickLearnControl = async (control) => {
         setLearnControl(control); const seq = ++seqRef.current;
-        const lookup = await buildLookupFor(srcBufRef.current, dryRmsRef.current, control, 7);
+        const lookup = await buildLookupFor(srcBufRef.current, dryLoudRef.current, control, 7);
         if (seq !== seqRef.current) return;
         learnLookupRef.current = lookup; const pos = learnPos, ns = nodesRef.current;
         setComp(ns.compA, null, ns.makeupA, 1); setComp(ns.compB, { ...BASE, [control]: ctrlValueAt(control, pos) }, ns.makeupB, interpMakeup(lookup, pos));
@@ -1085,12 +1106,12 @@
         if (patch.source) switchSource(patch.source); else if (isLearn) pickLearnControl(learnControl); else newRound();
       };
 
-      const primeFromBuffer = (buffer) => { srcBufRef.current = buffer; dryRmsRef.current = bufferRms(buffer) || 1e-6; dryEnvRef.current = envelopeOf(buffer, ENV_POINTS, 1); dryMaxRef.current = maxOf(dryEnvRef.current); };
+      const primeFromBuffer = async (buffer) => { srcBufRef.current = buffer; dryRmsRef.current = bufferRms(buffer) || 1e-6; dryEnvRef.current = envelopeOf(buffer, ENV_POINTS, 1); dryMaxRef.current = maxOf(dryEnvRef.current); dryLoudRef.current = await loudnessEnergy(buffer); };
       const unlock = async () => {
         setAudioLoading(true); setAudioError(null);
         try {
           const Ctx = window.AudioContext || window.webkitAudioContext; const ctx = new Ctx(); await ctx.resume(); ctxRef.current = ctx;
-          const buffer = await SOURCES[configRef.current.source].render(ctx.sampleRate); primeFromBuffer(buffer); loadedSourceRef.current = configRef.current.source;
+          const buffer = await SOURCES[configRef.current.source].render(ctx.sampleRate); await primeFromBuffer(buffer); loadedSourceRef.current = configRef.current.source;
           buildGraph(buffer); await ctx.suspend();
           setAudioReady(true); setAudioLoading(false); newRound("detect");
         } catch (e) { console.error(e); setAudioError((e && e.message) || "Audio init failed"); setAudioLoading(false); }
@@ -1099,7 +1120,7 @@
         const ctx = ctxRef.current; if (!ctx) return;
         try {
           if (nodesRef.current) { try { nodesRef.current.src.stop(); } catch (e) {} }
-          primeFromBuffer(buffer); buildGraph(buffer); if (ctx.state !== "running") await ctx.suspend();
+          await primeFromBuffer(buffer); buildGraph(buffer); if (ctx.state !== "running") await ctx.suspend();
           setAudioSource(label); loadedSourceRef.current = label; if (label === "custom") setCustomFileName(fileName || customFileName || "");
           if (isLearn) pickLearnControl(learnControl); else newRound();
         } catch (e) { console.error(e); setAudioError("Could not load that file."); }
@@ -1114,7 +1135,7 @@
         const ctx = ctxRef.current; if (!ctx) return;
         if (loadedSourceRef.current !== lv.source && SOURCES[lv.source]) {
           if (nodesRef.current) { try { nodesRef.current.src.stop(); } catch (e) {} }
-          const buffer = await SOURCES[lv.source].render(ctx.sampleRate); primeFromBuffer(buffer); buildGraph(buffer);
+          const buffer = await SOURCES[lv.source].render(ctx.sampleRate); await primeFromBuffer(buffer); buildGraph(buffer);
           if (ctx.state !== "running") await ctx.suspend();
           loadedSourceRef.current = lv.source; setAudioSource(lv.source);
         }
