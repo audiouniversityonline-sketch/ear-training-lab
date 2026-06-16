@@ -600,6 +600,10 @@
     const BASE = { threshold: -28, knee: 6, ratio: 4, attack: 0.02, release: 0.18 };
 
     const clampMakeup = (m) => Math.max(1, Math.min(3.5, m));
+    // Level roving: after loudness-matching, nudge each channel by a small random offset so
+    // overall loudness is never a reliable tell. Forces the ear onto timbre and dynamics.
+    const ROVE_DB = 1.1;
+    const roveGain = () => Math.pow(10, ((Math.random() * 2 - 1) * ROVE_DB) / 20);
     const CAP = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const fmtMs = (s) => Math.round(s * 1000) + " ms";
 
@@ -651,7 +655,7 @@
     };
 
     const MODES = {
-      detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is dry, one is compressed, matched in loudness. Pick the compressed one." },
+      detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is dry, one is compressed. Levels are matched and slightly roved each round, so loudness is never the tell. Pick the compressed one." },
       time: { label: "Attack / Release", prompt: "", blurb: "A and B share the same compression except one time constant. Tell which way B moved." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one parameter moved. Name the parameter." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Match it on B. Easy is a two-way pick, Medium gives more steps, Hard is freehand." },
@@ -840,7 +844,7 @@
       return (
         <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
           <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression Trainer</div></div></div>
-          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Both channels are matched in loudness, so the only tell is the sound. Best on monitors or headphones.</p>
+          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Levels are matched and slightly roved each round, so loudness can't give the answer away. The tell is the sound. Best on monitors or headphones.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
           <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Start"}</button>
         </div></div>
@@ -994,7 +998,7 @@
         }
         const a = await measure(presetA), b = await measure(presetB);
         const envMax = Math.max(maxOf(a.env), maxOf(b.env));
-        return { mode: m, presetA, presetB, makeupA: a.makeup, makeupB: b.makeup, envA: a.env, envB: b.env, grA: a.gr, grB: b.gr, envMax, answer, options, prompt, detail };
+        return { mode: m, presetA, presetB, makeupA: a.makeup, makeupB: b.makeup, roveA: roveGain(), roveB: roveGain(), envA: a.env, envB: b.env, grA: a.gr, grB: b.gr, envMax, answer, options, prompt, detail };
       };
 
       const newRound = async (m) => {
@@ -1007,7 +1011,7 @@
         if (r.mode === "match") {
           if (r.stepped) { setComp(ns.compA, { ...BASE, [r.control]: r.notches[r.targetIndex] }, ns.makeupA, r.lookup[r.targetIndex].makeup); setMatchIndex(r.startIndex); setComp(ns.compB, { ...BASE, [r.control]: r.notches[r.startIndex] }, ns.makeupB, r.lookup[r.startIndex].makeup); }
           else { setComp(ns.compA, r.presetTarget, ns.makeupA, r.makeupTarget); setMatchPos(r.startPos); setComp(ns.compB, { ...BASE, [r.control]: ctrlValueAt(r.control, r.startPos) }, ns.makeupB, interpMakeup(r.lookup, r.startPos)); }
-        } else { setComp(ns.compA, r.presetA, ns.makeupA, r.makeupA); setComp(ns.compB, r.presetB, ns.makeupB, r.makeupB); }
+        } else { setComp(ns.compA, r.presetA, ns.makeupA, r.makeupA * (r.roveA || 1)); setComp(ns.compB, r.presetB, ns.makeupB, r.makeupB * (r.roveB || 1)); }
         switchToChannel("A"); setBuilding(false);
       };
 
