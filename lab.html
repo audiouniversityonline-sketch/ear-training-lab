@@ -3875,53 +3875,7 @@
             </div>
           </header>
 
-          {/* ============ CURRENT TASK STRIP ============ */}
-          {currentTask && weekPlan && !isLearnMode && !showCurriculum && (
-            <div className="border-b rule bg-paper">
-              <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3">
-                <div className="flex items-center justify-between gap-4">
-                  <div className="min-w-0 flex-1">
-                    <div className="eyebrow mb-1">
-                      Level {curriculumWeek} · Task {curriculumTaskIndex + 1} of {weekPlan.tasks.length}
-                      {!nextTaskExists && <span className="ml-2 text-ink">· Final</span>}
-                    </div>
-                    <div className="font-display font-semibold text-base truncate">{weekPlan.lessonTitle}</div>
-                  </div>
-                  <div className="flex items-center gap-6 flex-shrink-0">
-                    <div className="text-right">
-                      <div className="eyebrow mb-1">Question</div>
-                      <div className="font-mono text-sm">
-                        {qInRound}<span className="text-mute">/{questionsPerRound}</span>
-                      </div>
-                    </div>
-                    {streak >= 2 && (
-                      <div className="text-right">
-                        <div className="eyebrow mb-1">Streak</div>
-                        <div className="font-mono text-sm" style={{ color: 'var(--accent)' }}>{streak}</div>
-                      </div>
-                    )}
-                    <div className="text-right hidden sm:block">
-                      <div className="eyebrow mb-1">Score</div>
-                      <div className="font-mono text-sm">{percent(sessionCorrect, sessionTotal)}</div>
-                    </div>
-                    {timeRemaining !== null && !showAnswer && (
-                      <div className={`px-3 py-1 font-mono text-xs ${timeRemaining <= 10 ? 'border border-hot text-hot' : 'border border-line-2 text-ink-2'}`}>
-                        {timeRemaining}s
-                      </div>
-                    )}
-                  </div>
-                </div>
-                <div className="tick-row mt-3">
-                  {Array.from({ length: questionsPerRound }, (_, i) => (
-                    <div
-                      key={i}
-                      className={`tick ${i < qInRound ? 'filled' : i === qInRound ? 'current' : ''}`}
-                    />
-                  ))}
-                </div>
-              </div>
-            </div>
-          )}
+          {/* Task progress now lives in the left rail + HUD (consistent with the compression module). */}
 
           {/* ============ MAIN CONTENT ============ */}
           <main className="flex-1 w-full">
@@ -3948,6 +3902,7 @@
               <div className="bench">
                 {/* ===== LEFT RAIL — course / progress (desktop only) ===== */}
                 <aside className="bench-left">
+                  <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><button className={"btn w-full mb-2 " + (activeModule === "eq" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("eq")}>EQ Trainer</button><button className={"btn w-full " + (activeModule === "compression" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("compression")}>Compression</button></div>
                   {!isLearnMode && weekPlan ? (
                     <div className="rail-panel">
                       <div className="eyebrow mb-2">Course</div>
@@ -3978,6 +3933,9 @@
 
                 {/* ===== CENTER STAGE ===== */}
                 <div className="bench-center">
+                {!isLearnMode && timeRemaining !== null && !showAnswer && (
+                  <div className="mb-4 flex justify-end"><div className={`px-3 py-1 font-mono text-xs ${timeRemaining <= 10 ? 'border border-hot text-hot' : 'border border-line-2 text-ink-2'}`}>{timeRemaining}s</div></div>
+                )}
                 {/* Mode selector + description — hidden in Learn (Learn forces Identify internally) */}
                 {!isLearnMode && (
                   <section className="mb-6">
@@ -4461,14 +4419,9 @@
                   </div>
                   <div className="grid grid-cols-2 gap-4">
                     <Metric label="Round" value={roundNum} />
-                    <Metric label="Question" value={`${qInRound}/${questionsPerRound}`} />
                     <Metric label="Streak" value={streak} sub={bestStreak > 0 ? `best ${bestStreak}` : null} />
                     <Metric
-                      label="Round Score"
-                      value={qInRound > 0 ? percent(roundCorrect, qInRound) : "—"}
-                    />
-                    <Metric
-                      label="Session Score"
+                      label="Score"
                       value={percent(sessionCorrect, sessionTotal)}
                       sub={sessionTotal > 0 ? `${sessionCorrect} of ${sessionTotal}` : null}
                     />
@@ -4485,9 +4438,9 @@
 
                 {/* Keyboard shortcuts hint (desktop only) */}
                 {!isMobile() && (
-                  <section className="mt-8 pt-6 border-t rule">
-                    <div className="flex items-center gap-6 flex-wrap text-xs font-mono text-mute">
-                      <div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play/Pause</div>
+                  <section className="pt-2">
+                    <div className="flex flex-col gap-2 text-xs font-mono text-mute">
+                      <div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div>
                       <div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> <kbd className="border rule px-1.5 py-0.5">C</kbd> Channel</div>
                       <div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div>
                     </div>
