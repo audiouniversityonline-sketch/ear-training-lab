@@ -2251,7 +2251,7 @@
           >
             <div className="sticky top-0 bg-paper border-b rule px-6 py-4 flex items-center justify-between z-10">
               <div>
-                <div className="eyebrow">Curriculum</div>
+                <div className="eyebrow">Levels</div>
                 <div className="font-display font-bold italic text-xl">{headerTitle}</div>
               </div>
               <button onClick={onClose} className="p-2 hover:bg-rule/50" aria-label="Close">
@@ -3852,39 +3852,30 @@
                   <button className={activeModule === "eq" ? "active" : ""} onClick={() => onSwitchModule("eq")}>EQ</button>
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
                 </div>
-                {/* Practice / Learn toggle */}
-                <div className="seg" aria-label="Mode toggle">
+                {/* Levels / Practice / Learn */}
+                <div className="seg" aria-label="Area">
                   <button
-                    className={!isLearnMode ? "active" : ""}
-                    onClick={() => { if (isLearnMode) exitLearnMode(); }}
+                    className={showCurriculum ? "active" : ""}
+                    onClick={() => setShowCurriculum(true)}
+                    disabled={!audioReady}
+                  >
+                    Levels
+                  </button>
+                  <button
+                    className={(!showCurriculum && !isLearnMode) ? "active" : ""}
+                    onClick={() => { setShowCurriculum(false); if (isLearnMode) exitLearnMode(); }}
                     disabled={!audioReady}
                   >
                     Practice
                   </button>
                   <button
-                    className={isLearnMode ? "active" : ""}
-                    onClick={() => { if (!isLearnMode) enterLearnMode(); }}
+                    className={(!showCurriculum && isLearnMode) ? "active" : ""}
+                    onClick={() => { setShowCurriculum(false); if (!isLearnMode) enterLearnMode(); }}
                     disabled={!audioReady}
                   >
                     Learn
                   </button>
                 </div>
-                <button
-                  onClick={() => setShowCurriculum(true)}
-                  className="btn btn-ghost inline-flex"
-                  disabled={!audioReady}
-                >
-                  <span className="font-mono text-[10px] opacity-60">Week {curriculumWeek}</span>
-                  <span>Curriculum</span>
-                </button>
-                <button
-                  onClick={() => setShowCurriculum(true)}
-                  className="btn btn-ghost hidden"
-                  disabled={!audioReady}
-                  aria-label="Curriculum"
-                >
-                  <span className="font-mono text-[10px]">W{curriculumWeek}</span>
-                </button>
                 <button
                   onClick={() => setShowDrawer(true)}
                   className="btn btn-ghost"
@@ -3967,7 +3958,7 @@
                           <div key={i} className={`tick ${i < qInRound ? 'filled' : i === qInRound ? 'current' : ''}`} />
                         ))}
                       </div>
-                      <button onClick={() => setShowCurriculum(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Curriculum</button>
+                      <button onClick={() => setShowCurriculum(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Levels</button>
                     </div>
                   ) : (
                     <div className="rail-panel">
@@ -3977,7 +3968,7 @@
                           ? "Exploring bands freely — pick a frequency and toggle A/B to train your ear. No scoring in Learn."
                           : "Pick a lesson to begin training."}
                       </p>
-                      <button onClick={() => setShowCurriculum(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Curriculum</button>
+                      <button onClick={() => setShowCurriculum(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Levels</button>
                     </div>
                   )}
                 </aside>
@@ -4643,13 +4634,13 @@
 
               {/* Curriculum shortcut */}
               <section>
-                <div className="eyebrow mb-3">Curriculum</div>
+                <div className="eyebrow mb-3">Levels</div>
                 <button
                   className="btn btn-ghost w-full justify-between"
                   onClick={onOpenCurriculum}
                   disabled={!audioReady}
                 >
-                  <span>Browse Curriculum</span>
+                  <span>Browse Levels</span>
                   <span className="opacity-50">→</span>
                 </button>
               </section>
