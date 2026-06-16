@@ -2207,7 +2207,7 @@
     function CurriculumPicker({
       currentLevelId, currentWeek, currentTaskIndex,
       onSelectLevel, onSelectWeek, onSelectTask,
-      progress, onClose, onMarkComplete, onUnmarkComplete, onOpenManual
+      progress, onClose, onMarkComplete, onUnmarkComplete, onOpenManual, inline
     }) {
       const activeLevels = CURRICULUM.levels || [];
       const lockedLevels = CURRICULUM.lockedLevels || [];
@@ -2240,26 +2240,28 @@
 
       const headerTitle = viewLevelLocked && lockedLevel
         ? lockedLevel.name
-        : (activeLevel?.name ? `${activeLevel.name} — ${weeks.length} Weeks` : "Curriculum");
+        : (activeLevel?.name ? `${activeLevel.name} — ${weeks.length} Levels` : "Levels");
 
       return (
-        <div className="overlay" onClick={onClose}>
+        <div className={inline ? "max-w-3xl mx-auto w-full px-4 sm:px-6 py-8" : "overlay"} onClick={inline ? undefined : onClose}>
           <div
-            className="bg-paper max-w-3xl w-full max-h-[90vh] overflow-y-auto"
-            style={{ border: '1px solid var(--ink)' }}
-            onClick={e => e.stopPropagation()}
+            className={inline ? "" : "bg-paper max-w-3xl w-full max-h-[90vh] overflow-y-auto"}
+            style={inline ? {} : { border: '1px solid var(--ink)' }}
+            onClick={inline ? undefined : (e => e.stopPropagation())}
           >
-            <div className="sticky top-0 bg-paper border-b rule px-6 py-4 flex items-center justify-between z-10">
+            <div className={inline ? "border-b rule pb-4 mb-2 flex items-center justify-between" : "sticky top-0 bg-paper border-b rule px-6 py-4 flex items-center justify-between z-10"}>
               <div>
                 <div className="eyebrow">Levels</div>
                 <div className="font-display font-bold italic text-xl">{headerTitle}</div>
               </div>
-              <button onClick={onClose} className="p-2 hover:bg-rule/50" aria-label="Close">
-                <CloseGlyph />
-              </button>
+              {!inline && (
+                <button onClick={onClose} className="p-2 hover:bg-rule/50" aria-label="Close">
+                  <CloseGlyph />
+                </button>
+              )}
             </div>
 
-            <div className="p-6">
+            <div className={inline ? "" : "p-6"}>
 
               {levelPills.length > 1 && (
                 <div className="mb-6 flex flex-wrap gap-2">
@@ -2303,7 +2305,7 @@
                     className={`week-card ${selectedWeek === w.week ? 'active' : ''} ${weekIsComplete(w.week) ? 'complete' : ''}`}
                     onClick={() => setSelectedWeek(w.week)}
                   >
-                    <div className="num">Week {w.week}</div>
+                    <div className="num">Level {w.week}</div>
                     <div className="title">{w.lessonTitle}</div>
                     <div className="meta">{w.tasks.length} tasks</div>
                   </button>
@@ -2313,7 +2315,7 @@
               {weekPlan && (
                 <div className="border-t rule pt-6">
                   <div className="flex items-baseline justify-between mb-3">
-                    <div className="eyebrow">Week {weekPlan.week} Tasks</div>
+                    <div className="eyebrow">Level {weekPlan.week} Tasks</div>
                     <div className="text-xs text-mute leading-relaxed hidden sm:block max-w-sm text-right">
                       Tap a task to start it. Use "Mark complete" for tasks you already finished before this update.
                     </div>
@@ -2439,7 +2441,7 @@
                         className="week-card"
                         style={{ opacity: 0.55, cursor: 'default', pointerEvents: 'none', minHeight: 'auto', padding: '14px' }}
                       >
-                        <div className="num">Week {weekNum}</div>
+                        <div className="num">Level {weekNum}</div>
                         <div className="flex items-center gap-1.5 mt-1">
                           <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.3" aria-hidden="true">
                             <rect x="2.5" y="5.5" width="7" height="5.5" rx="0.5" />
@@ -3821,21 +3823,7 @@
               onStart={(cfg) => { setManualConfig(cfg); startManualSession(cfg); }}
             />
           )}
-          {showCurriculum && (
-            <CurriculumPicker
-              currentLevelId={currentLevelId}
-              currentWeek={curriculumWeek}
-              currentTaskIndex={curriculumTaskIndex}
-              onOpenManual={() => { setShowCurriculum(false); setShowManualSetup(true); }}
-              onSelectLevel={setCurrentLevelId}
-              onSelectWeek={setCurriculumWeek}
-              onSelectTask={setCurriculumTaskIndex}
-              progress={progress}
-              onClose={() => setShowCurriculum(false)}
-              onMarkComplete={markTaskComplete}
-              onUnmarkComplete={unmarkTaskComplete}
-            />
-          )}
+          {/* Levels renders inline in <main> below (no longer a modal). */}
 
           {/* ============ TOP BAR ============ */}
           <header className="border-b rule">
@@ -3888,13 +3876,13 @@
           </header>
 
           {/* ============ CURRENT TASK STRIP ============ */}
-          {currentTask && weekPlan && !isLearnMode && (
+          {currentTask && weekPlan && !isLearnMode && !showCurriculum && (
             <div className="border-b rule bg-paper">
               <div className="max-w-6xl mx-auto px-4 sm:px-6 py-3">
                 <div className="flex items-center justify-between gap-4">
                   <div className="min-w-0 flex-1">
                     <div className="eyebrow mb-1">
-                      Week {curriculumWeek} · Task {curriculumTaskIndex + 1} of {weekPlan.tasks.length}
+                      Level {curriculumWeek} · Task {curriculumTaskIndex + 1} of {weekPlan.tasks.length}
                       {!nextTaskExists && <span className="ml-2 text-ink">· Final</span>}
                     </div>
                     <div className="font-display font-semibold text-base truncate">{weekPlan.lessonTitle}</div>
@@ -3937,7 +3925,22 @@
 
           {/* ============ MAIN CONTENT ============ */}
           <main className="flex-1 w-full">
-            {!currentTask && !isLearnMode ? (
+            {showCurriculum ? (
+              <CurriculumPicker
+                inline
+                currentLevelId={currentLevelId}
+                currentWeek={curriculumWeek}
+                currentTaskIndex={curriculumTaskIndex}
+                onOpenManual={() => { setShowCurriculum(false); setShowManualSetup(true); }}
+                onSelectLevel={setCurrentLevelId}
+                onSelectWeek={setCurriculumWeek}
+                onSelectTask={setCurriculumTaskIndex}
+                progress={progress}
+                onClose={() => setShowCurriculum(false)}
+                onMarkComplete={markTaskComplete}
+                onUnmarkComplete={unmarkTaskComplete}
+              />
+            ) : !currentTask && !isLearnMode ? (
               <div className="max-w-6xl mx-auto w-full px-4 sm:px-6 py-10">
                 <EmptyState onOpenCurriculum={() => setShowCurriculum(true)} audioReady={audioReady} />
               </div>
@@ -3949,7 +3952,7 @@
                     <div className="rail-panel">
                       <div className="eyebrow mb-2">Course</div>
                       <div className="font-mono text-[10px] text-mute mb-2">
-                        Week {curriculumWeek} · Task {curriculumTaskIndex + 1} of {weekPlan.tasks.length}
+                        Level {curriculumWeek} · Task {curriculumTaskIndex + 1} of {weekPlan.tasks.length}
                         {!nextTaskExists && <span className="text-ink"> · Final</span>}
                       </div>
                       <div className="font-display font-semibold text-base leading-snug mb-3">{weekPlan.lessonTitle}</div>
