@@ -4058,10 +4058,10 @@
             <Walkthrough
               onClose={() => setShowTour(false)}
               steps={[
-                { title: "Welcome — let's run one round", body: "Matching trains your ear to spot which frequency is boosted. Here's how a round works. You can skip this anytime." },
-                { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play, then switch between B (the target) and C (your copy). One frequency band is boosted on B. Your job is to make C sound the same." },
-                { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think is boosted. C updates to your pick right away, so you can switch to B and back to check before you commit." },
-                { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit. You'll see whether you got it and the exact curve, then you move on to the next round. That's the whole loop — your turn." },
+                { title: "How Matching works", body: "One frequency is boosted, and your job is to find it by ear. You can skip this anytime." },
+                { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play, then switch between B and C. B is the target, C is your copy. Your job is to make C match B." },
+                { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think is boosted. C switches to your pick, so you can compare it to B before you submit." },
+                { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see if you got it, plus the actual curve. Then you move to the next round. Go ahead and try one." },
               ]}
             />
           )}
