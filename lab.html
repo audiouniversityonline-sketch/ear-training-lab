@@ -629,32 +629,32 @@
     const DIFF_TOLMUL = { easy: 1.6, medium: 1.0, hard: 1.0 };
     const MATCH_STEPS = { easy: 2, medium: 4, hard: 0 }; // 0 = freehand slider; >=2 = stepped notches
     const MATCH_TIP = {
-      threshold: "Threshold sets how much of the signal crosses into compression. Lower catches more.",
-      ratio: "Ratio sets how hard it clamps above the threshold. Higher is more aggressive.",
-      attack: "Attack sets how fast it grabs the transient. Faster softens the initial hit.",
-      release: "Release sets how fast it lets go. Faster can pump, slower is smoother.",
+      threshold: "Threshold sets the level where compression starts. The lower it is, the more of the signal gets compressed.",
+      ratio: "Ratio sets how much the signal is turned down once it passes the threshold. Higher means more reduction.",
+      attack: "Attack sets how quickly compression starts after a sound crosses the threshold. A faster attack turns down the start of each sound more.",
+      release: "Release sets how quickly compression stops after the signal drops back down. A faster release can sound uneven; slower is steadier.",
     };
     const CTRL_DESC = {
-      attack: "How fast the compressor grabs the transient. Lower is faster, which softens the initial snap.",
-      release: "How fast it lets go after the signal drops. Lower is faster and can pump; higher is smoother.",
-      ratio: "How hard it clamps above the threshold. Higher is more aggressive and dense.",
-      threshold: "How much of the signal crosses into compression. Lower catches more of it.",
+      attack: "How quickly compression starts after a sound crosses the threshold. Lower is faster.",
+      release: "How quickly compression stops after the signal drops back down. Lower is faster.",
+      ratio: "How much the signal is turned down once it passes the threshold. Higher means more reduction.",
+      threshold: "The level where compression starts. Lower it and more of the signal gets compressed.",
     };
 
     const CUE = {
-      "attack|faster": "Faster attack clamps the transient sooner. The initial snap softens and the sound sits back a touch.",
-      "attack|slower": "Slower attack lets the transient through. More snap and punch up front.",
-      "release|faster": "Faster release recovers quickly. Denser sustain, and it can start to pump or breathe.",
-      "release|slower": "Slower release holds the gain down longer. Smoother and calmer, though sustain can dull.",
-      "ratio|higher": "Higher ratio clamps harder above the threshold. Denser, flatter, more obviously squashed.",
-      "threshold|lower": "Lower threshold catches more of the signal. More of the body is compressed, so it feels denser and more even.",
+      "attack|faster": "A faster attack starts compressing sooner, so the start of each sound is quieter and less sharp.",
+      "attack|slower": "A slower attack lets the start of each sound through before compressing, so it sounds sharper up front.",
+      "release|faster": "A faster release stops compressing sooner after each sound. It stays fuller between hits but can sound uneven.",
+      "release|slower": "A slower release keeps compressing longer after each sound. It sounds steadier but quieter between hits.",
+      "ratio|higher": "A higher ratio turns the signal down more once it passes the threshold, so it sounds more even.",
+      "threshold|lower": "A lower threshold compresses more of the signal, so it sounds more even.",
     };
 
     const MODES = {
-      detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is dry, one is compressed, loudness-matched to the same LUFS so level is never the tell. Pick the compressed one." },
-      time: { label: "Attack / Release", prompt: "", blurb: "A and B share the same compression except one time constant. Tell which way B moved." },
-      whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one parameter moved. Name the parameter." },
-      match: { label: "Match", prompt: "", blurb: "A is the target. Match it on B. Easy is a two-way pick, Medium gives more steps, Hard is freehand." },
+      detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
+      time: { label: "Attack / Release", prompt: "", blurb: "A and B use the same compressor except for one timing setting. Decide whether B's is faster or slower than A." },
+      whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one setting changed. Name the setting." },
+      match: { label: "Match", prompt: "", blurb: "A is the target. Adjust B until it matches A. Easy gives two choices, Medium gives a few steps, Hard is a free slider." },
     };
     const MODE_ORDER = ["detect", "time", "match"];   // "whatChanged" retired for now
 
@@ -865,7 +865,7 @@
       return (
         <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
           <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div></div>
-          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Both channels are loudness-matched to the same LUFS, so loudness can't give the answer away. The tell is the sound. Best on monitors or headphones.</p>
+          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Learn to hear what a compressor does to a sound. Every question has a clear right answer. Both channels are set to the same loudness, so you can't answer by volume alone. Use headphones or studio monitors for the best results.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
           <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Start"}</button>
         </div></div>
@@ -1207,7 +1207,7 @@
         );
       };
 
-      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". Listen for tamed peaks and a denser, more even body."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
       const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " was " + round.detail.direction; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
@@ -1250,7 +1250,7 @@
                 <div className="rail-panel">
                   <div className="eyebrow mb-2">{area === "learn" ? "Learn" : area === "levels" ? "Levels" : "Mode"}</div>
                   <div className="font-display font-semibold text-base leading-snug mb-2">{area === "learn" ? "Explore the controls" : area === "levels" ? (activeLevel ? activeLevel.title : "Guided path") : MODES[mode].label}</div>
-                  <p className="text-xs text-ink-2 leading-relaxed mb-3">{area === "learn" ? "Move all four controls against the dry reference and hear how they interact. No scoring." : area === "levels" ? (activeLevel ? levelMeta(activeLevel) : "Work the levels in order. Each one unlocks the next.") : MODES[mode].blurb}</p>
+                  <p className="text-xs text-ink-2 leading-relaxed mb-3">{area === "learn" ? "Adjust all four settings and compare against the uncompressed signal. No scoring here." : area === "levels" ? (activeLevel ? levelMeta(activeLevel) : "Work the levels in order. Each one unlocks the next.") : MODES[mode].blurb}</p>
                   {area === "levels" && activeLevel && (<button onClick={backToLevels} className="btn btn-ghost w-full mb-2">All levels</button>)}
                   <div className="font-mono text-[10px] text-mute pt-3 border-t rule">{area === "levels" ? ("Progress: " + passedCount + " / " + LEVELS.length + " passed") : ("Source: " + (SOURCES[config.source] ? SOURCES[config.source].label : "Custom") + " · " + CAP(config.difficulty))}</div>
                   {area !== "levels" && (<button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Settings</button>)}
@@ -1306,7 +1306,7 @@
                   </div>
                 </section>
 
-                <section className="mb-5"><div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div><h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">{isLearn ? "Shape the compressor and hear it" : (building ? "..." : (round ? round.prompt : ""))}</h2></section>
+                <section className="mb-5"><div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div><h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">{isLearn ? "Adjust the compressor and listen" : (building ? "..." : (round ? round.prompt : ""))}</h2></section>
 
                 {/* Match */}
                 {!isLearn && round && round.mode === "match" && (
@@ -1322,7 +1322,7 @@
                         <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[round.control].fmt(CONTROLS[round.control].min)}</span><span>{CONTROLS[round.control].fmt(CONTROLS[round.control].max)}</span></div>
                       </div>
                     )}
-                    <p className="text-xs text-mute mt-3 leading-relaxed">Toggle A (Target) and B (Yours).{round.stepped ? " Pick the step that matches A." : " Drive the control until they match."} Then check.</p>
+                    <p className="text-xs text-mute mt-3 leading-relaxed">Switch between A (target) and B (yours).{round.stepped ? " Pick the step that matches A." : " Adjust the slider until they match."} Then check your answer.</p>
                     {!showAnswer && <button className="btn btn-solid w-full mt-4" onClick={submitMatch} disabled={building}>Check match</button>}
                   </section>
                 )}
@@ -1340,7 +1340,7 @@
                           <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[c].fmt(CONTROLS[c].min)}</span><span>{CONTROLS[c].fmt(CONTROLS[c].max)}</span></div>
                         </div>
                       ))}
-                      <p className="text-sm text-ink-2 leading-relaxed">These four interact, so there's no single right knob. Move them in combination and listen to how attack and release behave at different thresholds and ratios. A is the dry reference, B is your compressor.</p>
+                      <p className="text-sm text-ink-2 leading-relaxed">These four settings affect each other, so try different combinations. A is the uncompressed signal and B is your compressor.</p>
                     </div>
                   </section>
                 )}
@@ -1351,7 +1351,7 @@
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? "✓ Correct" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{revealHeadline()}</div></div>
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
                     {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
-                    {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak GR on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
+                    {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak gain reduction on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
@@ -1369,15 +1369,15 @@
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-3">
                       <div className="eyebrow">Transient Scope</div>
-                      <button onClick={() => setLevelMatch(v => !v)} role="switch" aria-checked={levelMatch} title="Match loudness so level isn't the tell. Turn off to hear and see the real output level." style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6 }} disabled={!audioReady}>
+                      <button onClick={() => setLevelMatch(v => !v)} role="switch" aria-checked={levelMatch} title="Sets both channels to the same loudness so you compare the sound, not the volume. Turn it off to hear and see the real output level." style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6 }} disabled={!audioReady}>
                         <span style={{ width: 28, height: 16, borderRadius: 999, background: levelMatch ? "var(--accent)" : "var(--panel-3)", border: "1px solid var(--line-2)", position: "relative", display: "inline-block", transition: "background .15s" }}><span style={{ position: "absolute", top: 1, left: levelMatch ? 13 : 1, width: 12, height: 12, borderRadius: "50%", background: levelMatch ? "#0d0d0e" : "var(--ink-2)", transition: "left .15s" }}></span></span>
                         <span className="font-mono text-[10px]" style={{ color: levelMatch ? "var(--accent)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: 1 }}>Level match {levelMatch ? "on" : "off"}</span>
                       </button>
                     </div>
                     <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent)" }}>{roles.B}</span></span></div>
                   </div>
-                  {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden during the question. Trust your ears.</div>)}
-                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {levelMatch ? "Loudness is matched, so compare the shape of the transients and the body." : "Level match is off, so you're seeing the real output level. Lower threshold or higher ratio pulls the signal down."}</p>}
+                  {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden until you answer.</div>)}
+                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {levelMatch ? "Both are set to the same loudness, so compare their shapes, not their volume." : "Level match is off, so this shows the real output level. More compression makes the signal quieter."}</p>}
                 </section>
                 </>
                 )}
@@ -1423,7 +1423,7 @@
                   <label className="btn btn-ghost w-full mt-3" style={{ cursor: "pointer" }}>Upload WAV loop<input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files && e.target.files[0]) { onUploadFile(e.target.files[0]); setShowDrawer(false); } }} /></label>
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
-                <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Easy Match is a two-way pick, Medium gives four steps, Hard is freehand.</p></div>
+                <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Match, Easy gives two choices, Medium gives four steps, and Hard is a free slider.</p></div>
                 <div><div className="eyebrow mb-2">Match: control</div><Seg options={[{ value: "random", label: "Random" }, { value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchControl} onChange={(v) => setCfg({ matchControl: v })} disabled={!audioReady} /></div>
               </div>
             </div>
@@ -1701,7 +1701,7 @@
     // Localized copy for mode descriptions — explains the WHY
     const MODE_DESCRIPTIONS = {
       "Identify": "Compare A and B. Name the frequency that was changed.",
-      "Matching": "Copy the EQ on B to channel C. Train your precision.",
+      "Matching": "Copy the EQ from B onto channel C.",
       "Return to Flat": "B has an EQ. Apply the opposite on C to cancel it out.",
       "Return to Flat (Memory)": "Same as Return to Flat, but once you leave A you can't go back."
     };
@@ -1731,22 +1731,12 @@
        ============================================================ */
 
     function Wordmark({ className = "", compact = false, onDark = true }) {
-      // The official logo is a self-contained wordmark (shield + AUDIO UNIVERSITY text).
-      // We render it alone rather than adding separate text next to it.
-      const height = compact ? 36 : 48;
+      // Use the same logo asset as the header and the compression panel (window.AU_LOGO).
+      // It already reads correctly on dark, so no inversion (inverting it looked like a negative).
+      const size = compact ? 36 : 44;
       return (
         <div className={`flex items-center ${className}`}>
-          <img
-            src={LOGO_DATA_URI}
-            alt="Audio University"
-            height={height}
-            style={{
-              height: height + 'px',
-              width: 'auto',
-              // Invert on dark surfaces so the black shield renders as paper-colored
-              filter: onDark ? 'invert(1)' : 'none'
-            }}
-          />
+          <img src={window.AU_LOGO} alt="Audio University" style={{ height: size + 'px', width: size + 'px', display: 'block' }} />
         </div>
       );
     }
@@ -4599,7 +4589,7 @@
         <div className="max-w-xl mx-auto text-center py-16">
           <div className="eyebrow mb-4">Ear Training Lab</div>
           <h2 className="font-display font-bold italic text-4xl leading-tight mb-4">
-            Train your ear to hear what your tools are doing.
+            Learn to hear what EQ does to a sound.
           </h2>
           <p className="text-mute leading-relaxed mb-8">
             Structured lessons built around the Audio University 15-week curriculum.
