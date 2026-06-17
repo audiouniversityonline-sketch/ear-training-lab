@@ -3543,7 +3543,7 @@
         return out;
       };
 
-      const newRound = (poolOverride = null) => {
+      const newRound = (poolOverride = null, cfgOverride = null) => {
         clearRevealSwap();
         setListenCh("A");
         setHasLeftChannelA(false);
@@ -3552,6 +3552,18 @@
           setReviewState({ active: false, listening: 'actual', guessFreq: null, guessDir: null });
         }
 
+        // Effective config. A round built immediately after a config change (applyTaskSpec)
+        // can't see the just-set state through this closure yet, so the caller passes the
+        // new values via cfgOverride. With no override we read live state, which is correct
+        // for every round after the first.
+        const oc = cfgOverride || {};
+        const fcEff = oc.filterCount != null ? oc.filterCount : filterCount;
+        const goEff = oc.gainOptions !== undefined ? oc.gainOptions : gainOptions;
+        const gdEff = oc.gainDb != null ? oc.gainDb : gainDb;
+        const emEff = oc.eqMode || eqMode;
+        const mdEff = oc.mode || mode;
+        const tlEff = oc.timeLimit != null ? oc.timeLimit : timeLimit;
+
         let pool = poolOverride;
         if (!pool || pool.length === 0) pool = bandPool.length > 0 ? bandPool : OCTAVE_BANDS;
         if (!pool || pool.length === 0) pool = OCTAVE_BANDS;
@@ -3559,9 +3571,9 @@
         // Build the round's filter set. For filterCount=1 (default) this is a one-element
         // array — and we also populate the legacy round.freq/direction/gainDb scalars so
         // existing single-filter UI/scoring code paths keep working unchanged.
-        const count = Math.min(filterCount || 1, MAX_FILTERS, pool.length);
-        const gainPool = (gainOptions && gainOptions.length > 0) ? gainOptions : [gainDb];
-        const dirPool = eqMode === "both" ? ["boost", "cut"] : [eqMode];
+        const count = Math.min(fcEff || 1, MAX_FILTERS, pool.length);
+        const gainPool = (goEff && goEff.length > 0) ? goEff : [gdEff];
+        const dirPool = emEff === "both" ? ["boost", "cut"] : [emEff];
         const pickRand = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
         const freqs = sampleDistinct(pool, count);
@@ -3583,9 +3595,9 @@
           : { filters }
         );
         setShowAnswer(false);
-        setTimeRemaining(timeLimit > 0 ? timeLimit : null);
+        setTimeRemaining(tlEff > 0 ? tlEff : null);
         setGuessFreq(null);
-        setGuessDir(eqMode === "both" ? null : eqMode);
+        setGuessDir(emEff === "both" ? null : emEff);
 
         // Initialize per-slot guess/answer arrays. For single-filter rounds these stay
         // null and the legacy scalars are used; for multi-filter rounds these are the
@@ -3598,17 +3610,17 @@
           setAnswerFilters(filters.map(() => ({ freq: null, direction: null, gainDb: null })));
         }
 
-        if (isReturnToFlatMode(mode)) {
+        if (isReturnToFlatMode(mdEff)) {
           setAnswerFreq(null);
           setAnswerDir(null);
           setAnswerTouched(false);
-        } else if (mode === "Matching") {
+        } else if (mdEff === "Matching") {
           setAnswerFreq(null);
-          setAnswerDir(eqMode === "both" ? null : (isSingle ? f0.direction : null));
+          setAnswerDir(emEff === "both" ? null : (isSingle ? f0.direction : null));
           setAnswerTouched(false);
         } else {
           setAnswerFreq(1000);
-          setAnswerDir(eqMode !== "both" ? eqMode : null);
+          setAnswerDir(emEff !== "both" ? emEff : null);
           setAnswerTouched(false);
         }
       };
@@ -3655,7 +3667,17 @@
         setHasLeftChannelA(false);
         setTimeout(() => {
           const pool = newBandPool && newBandPool.length > 0 ? newBandPool : OCTAVE_BANDS;
-          newRound(pool);
+          // Pass the fresh task config through — the just-set state isn't visible to the
+          // newRound closure captured at this render, so the first round would otherwise
+          // use the previous filterCount / direction / gain.
+          newRound(pool, {
+            filterCount: fc,
+            gainOptions: Array.isArray(task.gainOptions) && task.gainOptions.length > 0 ? task.gainOptions : null,
+            gainDb: task.gainDb ?? 12,
+            eqMode: (task.direction === "mixed" || task.direction === "auto") ? "both" : task.direction,
+            mode: task.mode,
+            timeLimit: task.timeLimitSec || 0,
+          });
         }, 50);
       };
 
