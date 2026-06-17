@@ -618,7 +618,11 @@
     const ENV_POINTS = 240;
     const BASE = { threshold: -28, knee: 6, ratio: 4, attack: 0.02, release: 0.18 };
 
-    const clampMakeup = (m) => Math.max(1, Math.min(3.5, m));
+    // Loudness-match gain. MUST allow attenuation (<1): Chrome's DynamicsCompressorNode
+    // applies its own makeup and can output LOUDER than the dry input (a slow attack can
+    // overshoot by ~9 LU), so matching often needs to turn a channel DOWN, not just up.
+    // Flooring this at 1 left the louder channel uncorrected -> "the compressed one is louder."
+    const clampMakeup = (m) => Math.max(0.1, Math.min(4, m));
     const CAP = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const fmtMs = (s) => Math.round(s * 1000) + " ms";
 
