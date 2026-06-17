@@ -656,7 +656,7 @@
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one parameter moved. Name the parameter." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Match it on B. Easy is a two-way pick, Medium gives more steps, Hard is freehand." },
     };
-    const MODE_ORDER = ["detect", "time", "whatChanged", "match"];
+    const MODE_ORDER = ["detect", "time", "match"];   // "whatChanged" retired for now
 
     // Guided curriculum. Each level fixes a mode, source, and difficulty, and passes at need/of.
     const LEVELS = [
@@ -864,7 +864,7 @@
     function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
       return (
         <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
-          <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression Trainer</div></div></div>
+          <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div></div>
           <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Train your ear to hear what a compressor is doing. Every question has a right answer, in real terms. Both channels are loudness-matched to the same LUFS, so loudness can't give the answer away. The tell is the sound. Best on monitors or headphones.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
           <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Start"}</button>
@@ -875,7 +875,7 @@
     function paramValOf(preset, p) { if (!preset) return "—"; if (p === "attack") return fmtMs(preset.attack); if (p === "release") return fmtMs(preset.release); if (p === "ratio") return preset.ratio + ":1"; if (p === "threshold") return preset.threshold + " dB"; return ""; }
 
     /* ============================================================ */
-    function CompressionModule({ activeModule, onSwitchModule }) {
+    function CompressionModule({ activeModule, onSwitchModule, audioPreUnlocked, onAudioUnlocked }) {
       const ctxRef = useRef(null);
       const nodesRef = useRef(null);
       const monitorRef = useRef(null);
@@ -898,7 +898,7 @@
       const [isPlaying, setIsPlaying] = useState(false);
       const [listenCh, setListenCh] = useState("A");
 
-      const [area, setArea] = useState("levels");   // levels | practice | learn
+      const [area, setArea] = useState("practice");   // practice | learn  (Levels removed from Compression)
       const isLearn = area === "learn";
       const [activeLevel, setActiveLevel] = useState(null);
       const [levelAnswered, setLevelAnswered] = useState(0);
@@ -1116,6 +1116,11 @@
           setAudioReady(true); setAudioLoading(false); newRound("detect");
         } catch (e) { console.error(e); setAudioError((e && e.message) || "Audio init failed"); setAudioLoading(false); }
       };
+      // Single audio-enable across modules: announce once we're live, auto-enable on
+      // mount if another module already unlocked, and release the context on unmount.
+      useEffect(() => { if (audioReady && onAudioUnlocked) onAudioUnlocked(); }, [audioReady]);
+      useEffect(() => { if (audioPreUnlocked && !audioReady && !audioLoading) unlock(); }, [audioPreUnlocked]);
+      useEffect(() => () => { if (ctxRef.current) { try { ctxRef.current.close(); } catch (e) {} } }, []);
       const rebuildFromBuffer = async (buffer, label, fileName) => {
         const ctx = ctxRef.current; if (!ctx) return;
         try {
@@ -1188,13 +1193,13 @@
 
       return (
         <div className="min-h-screen flex flex-col">
-          {!audioReady && <AudioUnlockOverlay onUnlock={unlock} isLoading={audioLoading} error={audioError} />}
+          {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay onUnlock={unlock} isLoading={audioLoading} error={audioError} />}
 
           <header className="border-b rule">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
               <div className="flex items-center" style={{ gap: 12 }}>
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block", flexShrink: 0 }} />
-                <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression Trainer · Prototype</div></div>
+                <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div>
               </div>
               <div className="flex items-center gap-2">
                 <div className="seg" aria-label="Module">
@@ -1202,7 +1207,6 @@
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
                 </div>
                 <div className="seg" aria-label="Area">
-                  <button className={area === "levels" ? "active" : ""} onClick={goLevels} disabled={!audioReady}>Levels</button>
                   <button className={area === "practice" ? "active" : ""} onClick={goPractice} disabled={!audioReady}>Practice</button>
                   <button className={area === "learn" ? "active" : ""} onClick={enterLearn} disabled={!audioReady}>Learn</button>
                 </div>
@@ -1214,7 +1218,7 @@
           <main className="flex-1 w-full">
             <div className="bench">
               <aside className="bench-left">
-                <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><button className={"btn w-full mb-2 " + (activeModule === "eq" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("eq")}>EQ Trainer</button><button className={"btn w-full " + (activeModule === "compression" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("compression")}>Compression</button></div>
+                <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><button className={"btn w-full mb-2 " + (activeModule === "eq" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("eq")}>EQ</button><button className={"btn w-full " + (activeModule === "compression" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("compression")}>Compression</button></div>
                 <div className="rail-panel">
                   <div className="eyebrow mb-2">{area === "learn" ? "Learn" : area === "levels" ? "Levels" : "Mode"}</div>
                   <div className="font-display font-semibold text-base leading-snug mb-2">{area === "learn" ? "Explore the controls" : area === "levels" ? (activeLevel ? activeLevel.title : "Guided path") : MODES[mode].label}</div>
@@ -1380,7 +1384,6 @@
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
                 <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Easy Match is a two-way pick, Medium gives four steps, Hard is freehand.</p></div>
-                <div><div className="eyebrow mb-2">What changed: options</div><Seg options={[{ value: 2, label: "Attack / Release" }, { value: 4, label: "All four" }]} value={config.whatChangedPool} onChange={(v) => setCfg({ whatChangedPool: v })} disabled={!audioReady} /></div>
                 <div><div className="eyebrow mb-2">Match: control</div><Seg options={[{ value: "random", label: "Random" }, { value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchControl} onChange={(v) => setCfg({ matchControl: v })} disabled={!audioReady} /></div>
               </div>
             </div>
@@ -1687,7 +1690,7 @@
        SMALL PRESENTATIONAL COMPONENTS
        ============================================================ */
 
-    function Wordmark({ className = "", compact = false, onDark = false }) {
+    function Wordmark({ className = "", compact = false, onDark = true }) {
       // The official logo is a self-contained wordmark (shield + AUDIO UNIVERSITY text).
       // We render it alone rather than adding separate text next to it.
       const height = compact ? 36 : 48;
@@ -2575,10 +2578,10 @@
       );
     }
 
-    function App({ activeModule, onSwitchModule }) {
+    function App({ activeModule, onSwitchModule, audioPreUnlocked, onAudioUnlocked }) {
       /* ---------- Audio state ---------- */
       const [audioReady, setAudioReady] = useState(false);
-      const [showUnlock, setShowUnlock] = useState(true);
+      const [showUnlock, setShowUnlock] = useState(!audioPreUnlocked);
       const [audioLoading, setAudioLoading] = useState(false);
       const [audioError, setAudioError] = useState(null);
       const [isPlaying, setIsPlaying] = useState(false);
@@ -3615,9 +3618,13 @@
         return () => clearInterval(timer);
       }, [timeRemaining, showAnswer]);
 
+      // Single audio-enable across modules: announce once we're live, and auto-enable
+      // on mount if another module already unlocked audio (no second prompt).
+      useEffect(() => { if (audioReady && onAudioUnlocked) onAudioUnlocked(); }, [audioReady]);
+      useEffect(() => { if (audioPreUnlocked && !audioReady && !audioLoading) initializeAudio(); }, [audioPreUnlocked]);
       // Cleanup / page lifecycle
       useEffect(() => {
-        setShowUnlock(true);
+        setShowUnlock(!audioPreUnlocked);
         const onVisChange = () => { if (document.hidden) stopAudio(); };
         document.addEventListener('visibilitychange', onVisChange);
         const onBeforeUnload = () => {
@@ -3829,7 +3836,7 @@
 
       return (
         <div className="min-h-screen flex flex-col">
-          {showUnlock && <AudioUnlockOverlay onUnlock={initializeAudio} isLoading={audioLoading} error={audioError} />}
+          {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} isLoading={audioLoading} error={audioError} />}
           {showTaskComplete && (
             <TaskCompleteModal
               data={taskCompleteData}
@@ -3857,7 +3864,7 @@
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: 'block', flexShrink: 0 }} />
                 <div>
                   <div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div>
-                  <div className="mono" style={{ fontSize: 8, color: 'var(--ink-3)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Interactive EQ Ear Trainer</div>
+                  <div className="mono" style={{ fontSize: 8, color: 'var(--ink-3)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Equalization</div>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -3927,7 +3934,7 @@
               <div className="bench">
                 {/* ===== LEFT RAIL — course / progress (desktop only) ===== */}
                 <aside className="bench-left">
-                  <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><button className={"btn w-full mb-2 " + (activeModule === "eq" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("eq")}>EQ Trainer</button><button className={"btn w-full " + (activeModule === "compression" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("compression")}>Compression</button></div>
+                  <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><button className={"btn w-full mb-2 " + (activeModule === "eq" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("eq")}>EQ</button><button className={"btn w-full " + (activeModule === "compression" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("compression")}>Compression</button></div>
                   {!isLearnMode && weekPlan ? (
                     <div className="rail-panel">
                       <div className="eyebrow mb-2">Course</div>
@@ -4823,9 +4830,13 @@
     /* ---------- App shell: routes between modules in-app (no reload) ---------- */
     function Shell() {
       const [activeModule, setActiveModule] = useState("compression");
+      // Audio is enabled once for the whole app; both modules share that fact so
+      // switching between EQ and Compression never re-prompts the unlock overlay.
+      const [audioUnlocked, setAudioUnlocked] = useState(false);
+      const shared = { activeModule, onSwitchModule: setActiveModule, audioPreUnlocked: audioUnlocked, onAudioUnlocked: () => setAudioUnlocked(true) };
       return activeModule === "compression"
-        ? <CompressionModule activeModule={activeModule} onSwitchModule={setActiveModule} />
-        : <EqModule activeModule={activeModule} onSwitchModule={setActiveModule} />;
+        ? <CompressionModule {...shared} />
+        : <EqModule {...shared} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById("app"));
