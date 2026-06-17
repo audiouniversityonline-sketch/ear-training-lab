@@ -1039,6 +1039,63 @@
       );
     }
 
+    /* ---- Mode-aware walkthrough content. Plain language; anchors match the
+       [data-tour] attributes in each module's render. Used by the first-run
+       tour and the on-demand "Walkthrough" button. ---- */
+    function eqTourSteps(mode, isLearnMode) {
+      if (isLearnMode) return [
+        { title: "How Learn works", body: "There's no scoring here. Pick a frequency, boost or cut it, and switch between A and B to hear what it does." },
+        { selector: '[data-tour="frequency"]', title: "Pick a frequency", body: "Click any band to apply it, then switch between A and B to compare your change against the original." },
+      ];
+      if (mode === "Identify") return [
+        { title: "How Identify works", body: "One frequency is changed on B. Your job is to name it." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. A is the original, B has the change. Listen for the frequency that stands out." },
+        { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think was changed on B." },
+        { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see if you got it, plus the curve. Then you move to the next round." },
+      ];
+      if (mode === "Matching") return [
+        { title: "How Matching works", body: "One frequency is boosted, and your job is to find it by ear." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and listen to the original signal playing on A. Then switch to B to hear the target curve. B is the target, C is your answer. Your job is to make C match B." },
+        { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think is boosted. You'll hear the filter on C once you select a frequency. Then compare it to B before you submit." },
+        { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see if you answered correctly. Then you move to the next round. Go ahead and try one." },
+      ];
+      if (mode === "Return to Flat") return [
+        { title: "How Return to Flat works", body: "B has a hidden EQ move. Your job is to apply the opposite move on C so it sounds flat, like A." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play. A is flat, B has the EQ. Switch between them to hear what B changed." },
+        { selector: '[data-tour="frequency"]', title: "Cancel it out", body: "Pick the frequency B changed and apply the opposite on C. Compare C to A and aim for flat." },
+        { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see the correct fix and how close you got. Then you move to the next round." },
+      ];
+      if (mode === "Return to Flat (Memory)") return [
+        { title: "How Return to Flat from memory works", body: "Same as Return to Flat, but once you leave A you can't go back. You fix B from memory." },
+        { selector: '[data-tour="listen"]', title: "Listen first", body: "Press play and listen to A so you know how flat sounds. Then move to B. You won't be able to return to A." },
+        { selector: '[data-tour="frequency"]', title: "Cancel it out", body: "Pick the frequency B changed and apply the opposite on C, working from memory of how A sounded." },
+        { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see the correct fix and how close you got. Then you move to the next round." },
+      ];
+      return [{ title: "How it works", body: "Press play, compare the channels, make your pick, and submit." }];
+    }
+    function compTourSteps(mode, isLearn) {
+      if (isLearn) return [
+        { title: "How Learn works", body: "There's no scoring here. A is the dry signal, B is your compressor. Move the controls and listen to what each one does." },
+        { selector: '[data-tour="answer"]', title: "Move the controls", body: "Adjust threshold, ratio, attack, and release. They affect each other, so try different combinations and switch between A and B to compare." },
+      ];
+      if (mode === "detect") return [
+        { title: "How Detect works", body: "One channel is compressed and one is not. Both are set to the same loudness, so you can't tell them apart by volume." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. The compressed one sounds steadier and more even, with softer peaks." },
+        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Click the channel you think is compressed. You'll see if you're right, then move to the next one." },
+      ];
+      if (mode === "time") return [
+        { title: "How Attack and Release works", body: "A and B use the same compressor, except for one timing setting. Your job is to tell whether B's is faster or slower than A." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how quickly each one grabs the sound and lets it go." },
+        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Click faster or slower for B. You'll see if you're right, then move on." },
+      ];
+      if (mode === "match") return [
+        { title: "How Match works", body: "A is the target. Your job is to adjust B until it matches A." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. A is the target, B is yours." },
+        { selector: '[data-tour="answer"]', title: "Match it, then check", body: "Move the control until B sounds like A, then check your answer." },
+      ];
+      return [{ title: "How it works", body: "Press play, compare A and B, make your pick, and check your answer." }];
+    }
+
     /* ============================================================ */
     function CompressionModule({ activeModule, onSwitchModule, audioPreUnlocked, onAudioUnlocked }) {
       const ctxRef = useRef(null);
@@ -1085,6 +1142,7 @@
       const [scopeMatch, setScopeMatch] = useState(true);   // level match for the transient scope (what you see)
       const [audioMatch, setAudioMatch] = useState(true);   // level match for the audio (what you hear)
       const audioMatchRef = useRef(true);
+      const [showTour, setShowTour] = useState(false);     // on-demand walkthrough
 
       const [learnPos, setLearnPos] = useState({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
       const learnPosRef = useRef({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
@@ -1392,6 +1450,7 @@
       return (
         <div className="min-h-screen flex flex-col">
           {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay onUnlock={unlock} isLoading={audioLoading} error={audioError} />}
+          {showTour && <Walkthrough steps={compTourSteps(mode, isLearn)} onClose={() => setShowTour(false)} />}
 
           <header className="border-b rule">
             <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
@@ -1424,6 +1483,7 @@
                   {area === "levels" && activeLevel && (<button onClick={backToLevels} className="btn btn-ghost w-full mb-2">All levels</button>)}
                   <div className="font-mono text-[10px] text-mute pt-3 border-t rule">{area === "levels" ? ("Progress: " + passedCount + " / " + LEVELS.length + " passed") : ("Source: " + (SOURCES[config.source] ? SOURCES[config.source].label : "Custom") + " · " + CAP(config.difficulty))}</div>
                   {area !== "levels" && (<button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Settings</button>)}
+                  {!inLevelMenu && (<button onClick={() => setShowTour(true)} className="btn btn-ghost w-full mt-2" disabled={!audioReady}>Walkthrough</button>)}
                 </div>
               </aside>
 
@@ -1469,7 +1529,7 @@
                   </section>
                 )}
 
-                <section className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: "relative" }}>
+                <section data-tour="listen" className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: "relative" }}>
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
                     <button className="transport" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={20} /></button>
                     <div className="flex-1 grid grid-cols-2 gap-2">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><div className="letter">{ch}</div><div className="role">{roles[ch]}</div></button>); })}</div>
@@ -1484,7 +1544,7 @@
 
                 {/* Match */}
                 {!isLearn && round && round.mode === "match" && (
-                  <section className="card-dark p-5 mb-6">
+                  <section data-tour="answer" className="card-dark p-5 mb-6">
                     <div className="flex items-center justify-between mb-3"><div className="eyebrow">Your {round.control}</div><div className="font-mono text-sm text-ink">{round.stepped ? CONTROLS[round.control].fmt(round.notches[matchIndex]) : CONTROLS[round.control].fmt(ctrlValueAt(round.control, matchPos))}</div></div>
                     {round.stepped ? (
                       <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(" + round.notches.length + ", 1fr)" }}>
@@ -1500,11 +1560,11 @@
                     {!showAnswer && <button className="btn btn-solid w-full mt-4" onClick={submitMatch} disabled={building}>Check match</button>}
                   </section>
                 )}
-                {!isLearn && round && round.mode !== "match" && <section className="mb-6">{renderOptions()}</section>}
+                {!isLearn && round && round.mode !== "match" && <section data-tour="answer" className="mb-6">{renderOptions()}</section>}
 
                 {/* Learn free-dial — all four controls move together */}
                 {isLearn && (
-                  <section className="mb-6">
+                  <section data-tour="answer" className="mb-6">
                     <div className="eyebrow mb-3">Controls — move all four</div>
                     <div className="card-dark p-5 flex flex-col gap-5">
                       {["threshold", "ratio", "attack", "release"].map(c => (
@@ -1567,7 +1627,7 @@
               </aside>
 
               {!inLevelMenu && (
-                <div className="transport-dock">
+                <div data-tour="listen" className="transport-dock">
                   <button className="dock-play" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={18} /></button>
                   <div className="dock-chans">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"dock-chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><span className="letter">{ch}</span><span className="role">{roles[ch]}</span></button>); })}</div>
                 </div>
@@ -4062,12 +4122,7 @@
           {showTour && (
             <Walkthrough
               onClose={() => setShowTour(false)}
-              steps={[
-                { title: "How Matching works", body: "One frequency is boosted, and your job is to find it by ear." },
-                { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and listen to the original signal playing on A. Then switch to B to hear the target curve. B is the target, C is your answer. Your job is to make C match B." },
-                { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think is boosted. You'll hear the filter on C once you select a frequency. Then compare it to B before you submit." },
-                { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see if you answered correctly. Then you move to the next round. Go ahead and try one." },
-              ]}
+              steps={eqTourSteps(mode, isLearnMode)}
             />
           )}
           {showTaskComplete && (
@@ -4181,6 +4236,7 @@
                       <div className="font-display font-semibold text-base leading-snug mb-2">Explore bands</div>
                       <p className="text-xs text-ink-2 leading-relaxed mb-3">Pick a frequency and toggle A/B to train your ear. No scoring in Learn.</p>
                       <button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Settings</button>
+                      <button onClick={() => setShowTour(true)} className="btn btn-ghost w-full mt-2" disabled={!audioReady}>Walkthrough</button>
                     </div>
                   ) : (
                     <div className="rail-panel">
@@ -4188,6 +4244,7 @@
                       <div className="font-display font-semibold text-base leading-snug mb-2">{mode}</div>
                       <p className="text-xs text-ink-2 leading-relaxed mb-3">{MODE_DESCRIPTIONS[mode]}</p>
                       <button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Settings</button>
+                      <button onClick={() => setShowTour(true)} className="btn btn-ghost w-full mt-2" disabled={!audioReady}>Walkthrough</button>
                     </div>
                   )}
                 </aside>
