@@ -828,8 +828,8 @@
         <svg viewBox={"0 0 " + W + " " + H} width="100%" style={{ display: "block" }} aria-hidden="true">
           {beats.map((x, i) => (<line key={i} x1={x} y1={6} x2={x} y2={H - 6} stroke="var(--rule)" strokeWidth={i % 4 === 0 ? 1 : 0.5} opacity={i % 4 === 0 ? 0.8 : 0.4} />))}
           <line x1={0} y1={mid} x2={W} y2={mid} stroke="var(--line-2)" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
-          <path d={toPath(envA)} fill="var(--cool)" opacity="0.18" stroke="var(--cool)" strokeWidth="1.25" />
-          {envB && <path d={toPath(envB)} fill="var(--accent)" opacity="0.22" stroke="var(--accent)" strokeWidth="1.25" />}
+          {envB && <path d={toPath(envB)} fill="var(--accent)" opacity="0.3" stroke="var(--accent)" strokeWidth="1.25" />}
+          <path d={toPath(envA)} fill="none" stroke="var(--cool)" strokeWidth="1.5" />
         </svg>
       );
     }
@@ -917,6 +917,8 @@
       const [matchIndex, setMatchIndex] = useState(0);
       const [matchResult, setMatchResult] = useState(null);
       const [matchScope, setMatchScope] = useState(null);
+      const [levelMatch, setLevelMatch] = useState(true);   // LUFS loudness match on/off (affects audio + scope)
+      const levelMatchRef = useRef(true);
 
       const [learnPos, setLearnPos] = useState({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
       const learnPosRef = useRef({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
@@ -967,7 +969,7 @@
         const t = ctxRef.current.currentTime;
         const set = (param, val) => { try { param.setValueAtTime(val, t); } catch (e) { param.value = val; } };
         if (!preset) { set(comp.threshold, 0); set(comp.knee, 0); set(comp.ratio, 1); set(comp.attack, 0.003); set(comp.release, 0.25); set(makeupNode.gain, 1); }
-        else { set(comp.threshold, preset.threshold); set(comp.knee, preset.knee); set(comp.ratio, preset.ratio); set(comp.attack, preset.attack); set(comp.release, preset.release); set(makeupNode.gain, makeupVal || 1); }
+        else { set(comp.threshold, preset.threshold); set(comp.knee, preset.knee); set(comp.ratio, preset.ratio); set(comp.attack, preset.attack); set(comp.release, preset.release); set(makeupNode.gain, levelMatchRef.current ? (makeupVal || 1) : 1); }
       };
       const switchToChannel = (ch) => {
         const ns = nodesRef.current, ctx = ctxRef.current; if (!ns || !ctx) return; const t = ctx.currentTime;
@@ -1039,6 +1041,19 @@
       const updateMatchLive = (pos) => { const ns = nodesRef.current; if (!ns || !round || round.mode !== "match" || round.stepped) return; setComp(ns.compB, { ...BASE, [round.control]: ctrlValueAt(round.control, pos) }, ns.makeupB, interpMakeup(round.lookup, pos)); };
       const updateMatchStep = (index) => { const ns = nodesRef.current; if (!ns || !round || !round.stepped) return; setComp(ns.compB, { ...BASE, [round.control]: round.notches[index] }, ns.makeupB, round.lookup[index].makeup); };
 
+      // Level-match toggle: re-apply the makeup gain on the live channels (compressor
+      // params are unchanged) so flipping the switch updates the sound immediately.
+      const reapplyMakeup = () => {
+        const ns = nodesRef.current, ctx = ctxRef.current; if (!ns || !ctx) return; const t = ctx.currentTime;
+        const set = (node, m) => { const g = levelMatchRef.current ? (m || 1) : 1; try { node.gain.setValueAtTime(g, t); } catch (e) { node.gain.value = g; } };
+        if (isLearn) { set(ns.makeupA, 1); set(ns.makeupB, learnMakeupRef.current); }
+        else if (round && round.mode === "match") {
+          set(ns.makeupA, round.stepped ? round.lookup[round.targetIndex].makeup : round.makeupTarget);
+          set(ns.makeupB, round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos));
+        } else if (round) { set(ns.makeupA, round.makeupA); set(ns.makeupB, round.makeupB); }
+      };
+      useEffect(() => { levelMatchRef.current = levelMatch; reapplyMakeup(); }, [levelMatch]);
+
       const markPassed = (id) => { setPassedLevels(prev => { const next = { ...prev, [id]: true }; savePassed(next); return next; }); };
       const recordResult = (correct) => {
         setSessionTotal(t => t + 1);
@@ -1060,7 +1075,7 @@
         else { value = ctrlValueAt(round.control, matchPos); target = round.target; const spec = MATCH_TOL[round.control]; if (spec.type === "lin") { const err = Math.abs(value - target); within = err <= round.tol; tight = err <= round.tol * 0.5; } else { const f = Math.max(value / target, target / value); within = f <= round.tol; tight = f <= 1 + (round.tol - 1) * 0.5; } }
         setMatchResult({ value, target, within, tight }); setSelected("done"); setShowAnswer(true); setLastCorrect(within);
         recordResult(within);
-        try { const buf = srcBufRef.current, mk = round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos); const wetY = await renderWet(buf, { ...BASE, [round.control]: value }); const envY = envelopeOf(wetY, ENV_POINTS, mk); setMatchScope({ envA: round.envTarget, envB: envY, envMax: Math.max(maxOf(round.envTarget), maxOf(envY)) }); } catch (e) {}
+        try { const buf = srcBufRef.current, mk = round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos); const tmk = round.stepped ? round.lookup[round.targetIndex].makeup : round.makeupTarget; const wetY = await renderWet(buf, { ...BASE, [round.control]: value }); const envY = envelopeOf(wetY, ENV_POINTS, mk); setMatchScope({ envA: round.envTarget, envB: envY, makeupA: tmk, makeupB: mk, envMax: Math.max(maxOf(round.envTarget), maxOf(envY)) }); } catch (e) {}
       };
 
       const nextRound = () => {
@@ -1085,7 +1100,7 @@
           learnMakeupRef.current = mk;
           const ns = nodesRef.current; if (ns) setComp(ns.compB, preset, ns.makeupB, mk);
           const env = envelopeOf(wet, ENV_POINTS, mk), dryE = dryEnvRef.current;
-          setLearnScope({ envA: dryE, envB: env, envMax: Math.max(maxOf(dryE), maxOf(env)) });
+          setLearnScope({ envA: dryE, envB: env, makeupB: mk, envMax: Math.max(maxOf(dryE), maxOf(env)) });
         } catch (e) {}
       };
       const startLearn = () => {
@@ -1196,8 +1211,12 @@
       const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " was " + round.detail.direction; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
-      const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, envMax: round.envMax } : null));
-      const scopeA = scopeSrc && scopeSrc.envA, scopeB = scopeSrc && scopeSrc.envB, scopeMax = scopeSrc && scopeSrc.envMax;
+      const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
+      // When level-match is off, divide the makeup back out so the scope shows the real (unmatched) levels.
+      const dispEnv = (env, mk) => (levelMatch || !mk || !env) ? env : env.map(v => v / mk);
+      const scopeA = scopeSrc ? dispEnv(scopeSrc.envA, scopeSrc.makeupA) : null;
+      const scopeB = scopeSrc ? dispEnv(scopeSrc.envB, scopeSrc.makeupB) : null;
+      const scopeMax = (scopeA || scopeB) ? Math.max(scopeA ? maxOf(scopeA) : 1e-4, scopeB ? maxOf(scopeB) : 1e-4) : 1;
       const nextLevel = levelIndex >= 0 ? LEVELS[levelIndex + 1] : null;
 
       return (
@@ -1347,9 +1366,18 @@
                 )}
 
                 <section className="card p-5">
-                  <div className="flex items-center justify-between mb-3"><div className="eyebrow">Transient Scope</div><div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent)" }}>{roles.B}</span></span></div></div>
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <div className="flex items-center gap-3">
+                      <div className="eyebrow">Transient Scope</div>
+                      <button onClick={() => setLevelMatch(v => !v)} role="switch" aria-checked={levelMatch} title="Match loudness so level isn't the tell. Turn off to hear and see the real output level." style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6 }} disabled={!audioReady}>
+                        <span style={{ width: 28, height: 16, borderRadius: 999, background: levelMatch ? "var(--accent)" : "var(--panel-3)", border: "1px solid var(--line-2)", position: "relative", display: "inline-block", transition: "background .15s" }}><span style={{ position: "absolute", top: 1, left: levelMatch ? 13 : 1, width: 12, height: 12, borderRadius: "50%", background: levelMatch ? "#0d0d0e" : "var(--ink-2)", transition: "left .15s" }}></span></span>
+                        <span className="font-mono text-[10px]" style={{ color: levelMatch ? "var(--accent)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: 1 }}>Level match {levelMatch ? "on" : "off"}</span>
+                      </button>
+                    </div>
+                    <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent)" }}>{roles.B}</span></span></div>
+                  </div>
                   {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden during the question. Trust your ears.</div>)}
-                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. Both are shown together so you can see what the compression is doing to the transients and the body.</p>}
+                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {levelMatch ? "Loudness is matched, so compare the shape of the transients and the body." : "Level match is off, so you're seeing the real output level. Lower threshold or higher ratio pulls the signal down."}</p>}
                 </section>
                 </>
                 )}
@@ -4825,7 +4853,7 @@
     })();
     /* ---------- App shell: routes between modules in-app (no reload) ---------- */
     function Shell() {
-      const [activeModule, setActiveModule] = useState("compression");
+      const [activeModule, setActiveModule] = useState("eq");
       // Audio is enabled once for the whole app; both modules share that fact so
       // switching between EQ and Compression never re-prompts the unlock overlay.
       const [audioUnlocked, setAudioUnlocked] = useState(false);
