@@ -2738,7 +2738,8 @@
           mode: "Matching",
           resolution: "octaves",     // "octaves" | "thirds"
           direction: "boost",         // "boost" | "cut" | "auto"
-          gainDb: 6,
+          gainDb: IS_FREE ? 12 : 6,   // free starts on the more obvious +12 dB move
+
           rounds: 15,
           timeLimitSec: 0,
           freqPool: [...OCTAVE_BANDS],
