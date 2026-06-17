@@ -979,15 +979,20 @@
         setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
       }, [step]);
 
-      useEffect(() => {
+      // Measure before paint (useLayoutEffect) so the spotlight lands correctly on the
+      // first frame instead of flashing at a stale position while the layout settles
+      // (audio init can be slow on mobile). Re-measure on the next frame, after a beat,
+      // and on any resize/scroll as backstops.
+      React.useLayoutEffect(() => {
         const el = step ? visibleEl(step.selector) : null;
-        if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { el.scrollIntoView(); } }
+        if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: "center", behavior: "auto" }); } catch (e) { el.scrollIntoView(); } }
         measure();
+        const raf = requestAnimationFrame(measure);
         const t = setTimeout(measure, 380);
         const onMove = () => measure();
         window.addEventListener("resize", onMove);
         window.addEventListener("scroll", onMove, true);
-        return () => { clearTimeout(t); window.removeEventListener("resize", onMove); window.removeEventListener("scroll", onMove, true); };
+        return () => { cancelAnimationFrame(raf); clearTimeout(t); window.removeEventListener("resize", onMove); window.removeEventListener("scroll", onMove, true); };
       }, [measure]);
 
       if (!step) return null;
@@ -4058,10 +4063,10 @@
             <Walkthrough
               onClose={() => setShowTour(false)}
               steps={[
-                { title: "How Matching works", body: "One frequency is boosted, and your job is to find it by ear. You can skip this anytime." },
-                { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play, then switch between B and C. B is the target, C is your copy. Your job is to make C match B." },
-                { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think is boosted. C switches to your pick, so you can compare it to B before you submit." },
-                { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see if you got it, plus the actual curve. Then you move to the next round. Go ahead and try one." },
+                { title: "How Matching works", body: "One frequency is boosted, and your job is to find it by ear." },
+                { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and listen to the original signal playing on A. Then switch to B to hear the target curve. B is the target, C is your answer. Your job is to make C match B." },
+                { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think is boosted. You'll hear the filter on C once you select a frequency. Then compare it to B before you submit." },
+                { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit to see if you answered correctly. Then you move to the next round. Go ahead and try one." },
               ]}
             />
           )}
