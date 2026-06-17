@@ -587,7 +587,20 @@
     // Free build: served as lab.html?free=1 (paid build is plain lab.html, unaffected).
     // Free = limited EQ (Practice + Learn; the guided course is members-only) and no Compression.
     const IS_FREE = (typeof window !== "undefined") && (window.AU_FREE === true || (function () { try { return new URLSearchParams(window.location.search).get("free") === "1"; } catch (e) { return false; } })());
-    const KIT_FORM_URL = "https://upbeat-creator-1556.kit.com/e6cf75d3ed";
+    // Kit (account upbeat-creator-1556, form uid e6cf75d3ed). We post to the public
+    // form endpoint with our own styled field instead of embedding Kit's hosted form.
+    const KIT_FORM_ID = "9577831";
+    const isValidEmail = (s) => typeof s === "string" && /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(s.trim());
+    function submitToKit(email) {
+      if (!KIT_FORM_ID) return Promise.resolve(false);
+      try {
+        return fetch("https://app.kit.com/forms/" + KIT_FORM_ID + "/subscriptions", {
+          method: "POST",
+          headers: { "Content-Type": "application/json", "Accept": "application/json" },
+          body: JSON.stringify({ email_address: String(email).trim() }),
+        }).then(() => true).catch(() => false);
+      } catch (e) { return Promise.resolve(false); }
+    }
 
     /* ============================================================
        COMPRESSION EAR TRAINER — objective, configurable, with a
@@ -846,16 +859,41 @@
       );
     }
     // Free build: newsletter signup popup (shown once, after a short session).
+    // Our own styled field; submits straight to Kit's form endpoint (no embedded Kit form).
     function NewsletterModal({ onClose }) {
+      const [email, setEmail] = useState("");
+      const [err, setErr] = useState(false);
+      const [done, setDone] = useState(false);
+      const submit = () => {
+        if (!isValidEmail(email)) { setErr(true); return; }
+        submitToKit(email);
+        setDone(true);
+      };
       return (
         <div className="overlay" style={{ zIndex: 200 }}>
-          <div className="bg-panel text-ink w-full p-6" style={{ border: "1px solid var(--rule)", maxWidth: 460, position: "relative" }}>
+          <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 420, position: "relative" }}>
             <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
-            <div className="eyebrow mb-2">Audio University</div>
-            <h2 className="font-display font-bold text-2xl leading-tight mb-2">Get more free ear training</h2>
-            <p className="text-sm text-mute leading-relaxed mb-4">Join the newsletter for new lessons and tips. You can keep training right after.</p>
-            <iframe src={KIT_FORM_URL} title="Join the newsletter" style={{ width: "100%", height: 440, border: 0, borderRadius: 8, background: "#fff", display: "block" }}></iframe>
-            <button onClick={onClose} className="btn btn-ghost w-full mt-4">Maybe later</button>
+            {done ? (
+              <>
+                <div className="eyebrow mb-2" style={{ color: "var(--green)" }}>✓ You're on the list</div>
+                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Thanks for joining</h2>
+                <p className="text-sm text-mute leading-relaxed mb-5">Check your inbox to confirm your email. Then keep training.</p>
+                <button onClick={onClose} className="btn btn-solid w-full">Keep training</button>
+              </>
+            ) : (
+              <>
+                <div className="eyebrow mb-2">Audio University</div>
+                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Get more free ear training</h2>
+                <p className="text-sm text-mute leading-relaxed mb-4">Join the newsletter for new lessons and tips. You can keep training right after.</p>
+                <input type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email}
+                  onChange={(e) => { setEmail(e.target.value); if (err) setErr(false); }}
+                  onKeyDown={(e) => { if (e.key === "Enter") submit(); }}
+                  style={{ width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 14, background: "var(--panel-2)", color: "var(--ink)", borderRadius: 8, border: "1px solid " + (err ? "var(--hot)" : "var(--line-2)"), outline: "none" }} />
+                {err && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
+                <button onClick={submit} className="btn btn-solid w-full mt-4">Join the newsletter</button>
+                <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Maybe later</button>
+              </>
+            )}
           </div>
         </div>
       );
