@@ -833,6 +833,14 @@
         </svg>
       );
     }
+    function MatchToggle({ on, onToggle, label, disabled, title }) {
+      return (
+        <button onClick={onToggle} role="switch" aria-checked={on} disabled={disabled} title={title} style={{ background: "none", border: "none", cursor: disabled ? "default" : "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6, opacity: disabled ? 0.5 : 1 }}>
+          <span style={{ width: 28, height: 16, borderRadius: 999, background: on ? "var(--accent)" : "var(--panel-3)", border: "1px solid var(--line-2)", position: "relative", display: "inline-block", transition: "background .15s", flexShrink: 0 }}><span style={{ position: "absolute", top: 1, left: on ? 13 : 1, width: 12, height: 12, borderRadius: "50%", background: on ? "#0d0d0e" : "var(--ink-2)", transition: "left .15s" }}></span></span>
+          <span className="font-mono text-[10px]" style={{ color: on ? "var(--accent)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: 1, whiteSpace: "nowrap" }}>{label} {on ? "on" : "off"}</span>
+        </button>
+      );
+    }
     function GrMeter({ nodeRef, active, maxGr = 18 }) {
       const [gr, setGr] = useState(0);
       useEffect(() => {
@@ -917,8 +925,9 @@
       const [matchIndex, setMatchIndex] = useState(0);
       const [matchResult, setMatchResult] = useState(null);
       const [matchScope, setMatchScope] = useState(null);
-      const [levelMatch, setLevelMatch] = useState(true);   // LUFS loudness match on/off (affects audio + scope)
-      const levelMatchRef = useRef(true);
+      const [scopeMatch, setScopeMatch] = useState(true);   // level match for the transient scope (what you see)
+      const [audioMatch, setAudioMatch] = useState(true);   // level match for the audio (what you hear)
+      const audioMatchRef = useRef(true);
 
       const [learnPos, setLearnPos] = useState({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
       const learnPosRef = useRef({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
@@ -969,7 +978,7 @@
         const t = ctxRef.current.currentTime;
         const set = (param, val) => { try { param.setValueAtTime(val, t); } catch (e) { param.value = val; } };
         if (!preset) { set(comp.threshold, 0); set(comp.knee, 0); set(comp.ratio, 1); set(comp.attack, 0.003); set(comp.release, 0.25); set(makeupNode.gain, 1); }
-        else { set(comp.threshold, preset.threshold); set(comp.knee, preset.knee); set(comp.ratio, preset.ratio); set(comp.attack, preset.attack); set(comp.release, preset.release); set(makeupNode.gain, levelMatchRef.current ? (makeupVal || 1) : 1); }
+        else { set(comp.threshold, preset.threshold); set(comp.knee, preset.knee); set(comp.ratio, preset.ratio); set(comp.attack, preset.attack); set(comp.release, preset.release); set(makeupNode.gain, audioMatchRef.current ? (makeupVal || 1) : 1); }
       };
       const switchToChannel = (ch) => {
         const ns = nodesRef.current, ctx = ctxRef.current; if (!ns || !ctx) return; const t = ctx.currentTime;
@@ -1045,14 +1054,14 @@
       // params are unchanged) so flipping the switch updates the sound immediately.
       const reapplyMakeup = () => {
         const ns = nodesRef.current, ctx = ctxRef.current; if (!ns || !ctx) return; const t = ctx.currentTime;
-        const set = (node, m) => { const g = levelMatchRef.current ? (m || 1) : 1; try { node.gain.setValueAtTime(g, t); } catch (e) { node.gain.value = g; } };
+        const set = (node, m) => { const g = audioMatchRef.current ? (m || 1) : 1; try { node.gain.setValueAtTime(g, t); } catch (e) { node.gain.value = g; } };
         if (isLearn) { set(ns.makeupA, 1); set(ns.makeupB, learnMakeupRef.current); }
         else if (round && round.mode === "match") {
           set(ns.makeupA, round.stepped ? round.lookup[round.targetIndex].makeup : round.makeupTarget);
           set(ns.makeupB, round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos));
         } else if (round) { set(ns.makeupA, round.makeupA); set(ns.makeupB, round.makeupB); }
       };
-      useEffect(() => { levelMatchRef.current = levelMatch; reapplyMakeup(); }, [levelMatch]);
+      useEffect(() => { audioMatchRef.current = audioMatch; reapplyMakeup(); }, [audioMatch]);
 
       const markPassed = (id) => { setPassedLevels(prev => { const next = { ...prev, [id]: true }; savePassed(next); return next; }); };
       const recordResult = (correct) => {
@@ -1212,11 +1221,15 @@
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
-      // When level-match is off, divide the makeup back out so the scope shows the real (unmatched) levels.
-      const dispEnv = (env, mk) => (levelMatch || !mk || !env) ? env : env.map(v => v / mk);
+      // When scope level-match is off, divide the makeup back out so the scope shows the real (unmatched) levels.
+      const dispEnv = (env, mk) => (scopeMatch || !mk || !env) ? env : env.map(v => v / mk);
       const scopeA = scopeSrc ? dispEnv(scopeSrc.envA, scopeSrc.makeupA) : null;
       const scopeB = scopeSrc ? dispEnv(scopeSrc.envB, scopeSrc.makeupB) : null;
-      const scopeMax = (scopeA || scopeB) ? Math.max(scopeA ? maxOf(scopeA) : 1e-4, scopeB ? maxOf(scopeB) : 1e-4) : 1;
+      // In Learn, A is the fixed dry reference — anchor the vertical scale to it so the dry
+      // trace never moves when you change settings (only B should change).
+      const scopeMax = isLearn
+        ? (scopeA ? maxOf(scopeA) : 1)
+        : ((scopeA || scopeB) ? Math.max(scopeA ? maxOf(scopeA) : 1e-4, scopeB ? maxOf(scopeB) : 1e-4) : 1);
       const nextLevel = levelIndex >= 0 ? LEVELS[levelIndex + 1] : null;
 
       return (
@@ -1304,6 +1317,10 @@
                     <button className="transport" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={20} /></button>
                     <div className="flex-1 grid grid-cols-2 gap-2">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><div className="letter">{ch}</div><div className="role">{roles[ch]}</div></button>); })}</div>
                   </div>
+                  <div className="relative z-10 mt-4 pt-4 border-t rule flex items-center justify-between">
+                    <span className="font-mono text-[10px] text-mute" style={{ textTransform: "uppercase", letterSpacing: 1 }}>What you hear</span>
+                    <MatchToggle on={audioMatch} onToggle={() => setAudioMatch(v => !v)} disabled={!audioReady} label="Level match" title="Levels the two channels so you can't tell them apart by volume. Turn it off to hear the real output level." />
+                  </div>
                 </section>
 
                 <section className="mb-5"><div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div><h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">{isLearn ? "Adjust the compressor and listen" : (building ? "..." : (round ? round.prompt : ""))}</h2></section>
@@ -1369,15 +1386,12 @@
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-3">
                       <div className="eyebrow">Transient Scope</div>
-                      <button onClick={() => setLevelMatch(v => !v)} role="switch" aria-checked={levelMatch} title="Sets both channels to the same loudness so you compare the sound, not the volume. Turn it off to hear and see the real output level." style={{ background: "none", border: "none", cursor: "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6 }} disabled={!audioReady}>
-                        <span style={{ width: 28, height: 16, borderRadius: 999, background: levelMatch ? "var(--accent)" : "var(--panel-3)", border: "1px solid var(--line-2)", position: "relative", display: "inline-block", transition: "background .15s" }}><span style={{ position: "absolute", top: 1, left: levelMatch ? 13 : 1, width: 12, height: 12, borderRadius: "50%", background: levelMatch ? "#0d0d0e" : "var(--ink-2)", transition: "left .15s" }}></span></span>
-                        <span className="font-mono text-[10px]" style={{ color: levelMatch ? "var(--accent)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: 1 }}>Level match {levelMatch ? "on" : "off"}</span>
-                      </button>
+                      <MatchToggle on={scopeMatch} onToggle={() => setScopeMatch(v => !v)} disabled={!audioReady} label="Level match" title="Levels the two traces in the scope so you compare their shape, not their height. Turn it off to see the real output level." />
                     </div>
                     <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent)" }}>{roles.B}</span></span></div>
                   </div>
                   {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden until you answer.</div>)}
-                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {levelMatch ? "Both are set to the same loudness, so compare their shapes, not their volume." : "Level match is off, so this shows the real output level. More compression makes the signal quieter."}</p>}
+                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {scopeMatch ? "Both are leveled to match, so compare their shapes, not their height." : "Level match is off, so this shows the real output level. More compression makes the signal quieter."}</p>}
                 </section>
                 </>
                 )}
