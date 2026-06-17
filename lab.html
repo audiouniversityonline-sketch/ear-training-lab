@@ -735,9 +735,9 @@
     }
     function scheduleBassNote(ctx, dest, t, freq, dur, vel) {
       const end = t + dur, a = 0.008, r = 0.09;
-      const osc = ctx.createOscillator(); osc.type = "sawtooth"; osc.frequency.value = freq;
+      const osc = ctx.createOscillator(); osc.type = "triangle"; osc.frequency.value = freq;
       const sub = ctx.createOscillator(); sub.type = "sine"; sub.frequency.value = freq;
-      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = Math.min(1600, freq * 8); lp.Q.value = 0.7;
+      const lp = ctx.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = Math.min(1200, freq * 6); lp.Q.value = 0.7;
       const g = ctx.createGain();
       g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vel, t + a);
       g.gain.setValueAtTime(vel, Math.max(t + a + 0.001, end - r)); g.gain.exponentialRampToValueAtTime(0.0001, end);
@@ -828,8 +828,8 @@
         <svg viewBox={"0 0 " + W + " " + H} width="100%" style={{ display: "block" }} aria-hidden="true">
           {beats.map((x, i) => (<line key={i} x1={x} y1={6} x2={x} y2={H - 6} stroke="var(--rule)" strokeWidth={i % 4 === 0 ? 1 : 0.5} opacity={i % 4 === 0 ? 0.8 : 0.4} />))}
           <line x1={0} y1={mid} x2={W} y2={mid} stroke="var(--line-2)" strokeWidth="1" strokeDasharray="3 3" opacity="0.5" />
-          <path d={toPath(envA)} fill="var(--ink-3)" opacity="0.4" />
-          {envB && <path d={toPath(envB)} fill="var(--accent)" opacity="0.5" stroke="var(--accent)" strokeWidth="1" />}
+          <path d={toPath(envA)} fill="var(--cool)" opacity="0.18" stroke="var(--cool)" strokeWidth="1.25" />
+          {envB && <path d={toPath(envB)} fill="var(--accent)" opacity="0.22" stroke="var(--accent)" strokeWidth="1.25" />}
         </svg>
       );
     }
@@ -886,7 +886,7 @@
       const dryEnvRef = useRef(null);
       const dryMaxRef = useRef(1e-4);
       const seqRef = useRef(0);
-      const learnLookupRef = useRef(null);
+      const learnMakeupRef = useRef(1);
       const learnTimerRef = useRef(null);
       const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchControl: "random" });
       const levelCfgRef = useRef(null);     // active level's config, overrides configRef while playing a level
@@ -918,8 +918,8 @@
       const [matchResult, setMatchResult] = useState(null);
       const [matchScope, setMatchScope] = useState(null);
 
-      const [learnControl, setLearnControl] = useState("attack");
-      const [learnPos, setLearnPos] = useState(0.5);
+      const [learnPos, setLearnPos] = useState({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
+      const learnPosRef = useRef({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
       const [learnScope, setLearnScope] = useState(null);
 
       const [roundNum, setRoundNum] = useState(1);
@@ -1075,25 +1075,34 @@
       const changeMode = (m) => { if (m === mode) return; setMode(m); if (area === "practice") newRound(m); };
 
       /* ----- learn free-dial ----- */
-      const renderLearnScope = async (control, pos, lookup) => {
-        try { const buf = srcBufRef.current, v = ctrlValueAt(control, pos); const wet = await renderWet(buf, { ...BASE, [control]: v }); const env = envelopeOf(wet, ENV_POINTS, interpMakeup(lookup, pos)); const dryE = dryEnvRef.current; setLearnScope({ envA: dryE, envB: env, envMax: Math.max(maxOf(dryE), maxOf(env)) }); } catch (e) {}
+      // Learn lets all four controls move together (they interact), so the compressor
+      // is built from the combined positions and its loudness-match makeup is recomputed live.
+      const learnPresetFrom = (pos) => ({ ...BASE, threshold: ctrlValueAt("threshold", pos.threshold), ratio: ctrlValueAt("ratio", pos.ratio), attack: ctrlValueAt("attack", pos.attack), release: ctrlValueAt("release", pos.release) });
+      const renderLearnScope = async (pos) => {
+        try {
+          const buf = srcBufRef.current; if (!buf) return;
+          const preset = learnPresetFrom(pos), wet = await renderWet(buf, preset), mk = await makeupFor(wet, dryLoudRef.current);
+          learnMakeupRef.current = mk;
+          const ns = nodesRef.current; if (ns) setComp(ns.compB, preset, ns.makeupB, mk);
+          const env = envelopeOf(wet, ENV_POINTS, mk), dryE = dryEnvRef.current;
+          setLearnScope({ envA: dryE, envB: env, envMax: Math.max(maxOf(dryE), maxOf(env)) });
+        } catch (e) {}
       };
-      const pickLearnControl = async (control) => {
-        setLearnControl(control); const seq = ++seqRef.current;
-        const lookup = await buildLookupFor(srcBufRef.current, dryLoudRef.current, control, 7);
-        if (seq !== seqRef.current) return;
-        learnLookupRef.current = lookup; const pos = learnPos, ns = nodesRef.current;
-        setComp(ns.compA, null, ns.makeupA, 1); setComp(ns.compB, { ...BASE, [control]: ctrlValueAt(control, pos) }, ns.makeupB, interpMakeup(lookup, pos));
-        switchToChannel("B"); renderLearnScope(control, pos, lookup);
+      const startLearn = () => {
+        const ns = nodesRef.current; if (!ns) return;
+        setComp(ns.compA, null, ns.makeupA, 1);
+        setComp(ns.compB, learnPresetFrom(learnPosRef.current), ns.makeupB, learnMakeupRef.current);
+        switchToChannel("B"); renderLearnScope(learnPosRef.current);
       };
-      const updateLearnLive = (pos) => {
-        setLearnPos(pos); const ns = nodesRef.current, lk = learnLookupRef.current; if (!ns || !lk) return;
-        setComp(ns.compB, { ...BASE, [learnControl]: ctrlValueAt(learnControl, pos) }, ns.makeupB, interpMakeup(lk, pos));
+      const updateLearnLive = (control, p) => {
+        const next = { ...learnPosRef.current, [control]: p };
+        learnPosRef.current = next; setLearnPos(next);
+        const ns = nodesRef.current; if (ns) setComp(ns.compB, learnPresetFrom(next), ns.makeupB, learnMakeupRef.current);
         if (listenCh !== "B") switchToChannel("B");
-        clearTimeout(learnTimerRef.current); learnTimerRef.current = setTimeout(() => renderLearnScope(learnControl, pos, lk), 150);
+        clearTimeout(learnTimerRef.current); learnTimerRef.current = setTimeout(() => renderLearnScope(next), 150);
       };
       const clearLevel = () => { levelCfgRef.current = null; setActiveLevel(null); setLevelResult(null); };
-      const enterLearn = () => { setArea("learn"); clearLevel(); setShowAnswer(false); pickLearnControl(learnControl); };
+      const enterLearn = () => { setArea("learn"); clearLevel(); setShowAnswer(false); startLearn(); };
       const goPractice = () => { setArea("practice"); clearLevel(); newRound(mode); };
       const goLevels = () => { setArea("levels"); clearLevel(); setShowAnswer(false); };
 
@@ -1103,7 +1112,7 @@
         const next = { ...configRef.current, ...patch }; configRef.current = next; setConfig(next);
         // Changing custom settings drops you into Practice (levels are fixed exercises).
         if (activeLevel) { clearLevel(); setArea("practice"); }
-        if (patch.source) switchSource(patch.source); else if (isLearn) pickLearnControl(learnControl); else newRound();
+        if (patch.source) switchSource(patch.source); else if (isLearn) startLearn(); else newRound();
       };
 
       const primeFromBuffer = async (buffer) => { srcBufRef.current = buffer; dryRmsRef.current = bufferRms(buffer) || 1e-6; dryEnvRef.current = envelopeOf(buffer, ENV_POINTS, 1); dryMaxRef.current = maxOf(dryEnvRef.current); dryLoudRef.current = await loudnessEnergy(buffer); };
@@ -1127,7 +1136,7 @@
           if (nodesRef.current) { try { nodesRef.current.src.stop(); } catch (e) {} }
           await primeFromBuffer(buffer); buildGraph(buffer); if (ctx.state !== "running") await ctx.suspend();
           setAudioSource(label); loadedSourceRef.current = label; if (label === "custom") setCustomFileName(fileName || customFileName || "");
-          if (isLearn) pickLearnControl(learnControl); else newRound();
+          if (isLearn) startLearn(); else newRound();
         } catch (e) { console.error(e); setAudioError("Could not load that file."); }
       };
       const onUploadFile = async (file) => {
@@ -1167,7 +1176,7 @@
           }
         };
         window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-      }, [audioReady, area, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, learnControl, learnPos, activeLevel, levelAnswered, levelCorrect, inLevelMenu]);
+      }, [audioReady, area, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, activeLevel, levelAnswered, levelCorrect, inLevelMenu]);
 
       const renderOptions = () => {
         if (!round || round.mode === "match") return null;
@@ -1222,7 +1231,7 @@
                 <div className="rail-panel">
                   <div className="eyebrow mb-2">{area === "learn" ? "Learn" : area === "levels" ? "Levels" : "Mode"}</div>
                   <div className="font-display font-semibold text-base leading-snug mb-2">{area === "learn" ? "Explore the controls" : area === "levels" ? (activeLevel ? activeLevel.title : "Guided path") : MODES[mode].label}</div>
-                  <p className="text-xs text-ink-2 leading-relaxed mb-3">{area === "learn" ? "Sweep any control against the dry reference and hear its full range. No scoring." : area === "levels" ? (activeLevel ? levelMeta(activeLevel) : "Work the levels in order. Each one unlocks the next.") : MODES[mode].blurb}</p>
+                  <p className="text-xs text-ink-2 leading-relaxed mb-3">{area === "learn" ? "Move all four controls against the dry reference and hear how they interact. No scoring." : area === "levels" ? (activeLevel ? levelMeta(activeLevel) : "Work the levels in order. Each one unlocks the next.") : MODES[mode].blurb}</p>
                   {area === "levels" && activeLevel && (<button onClick={backToLevels} className="btn btn-ghost w-full mb-2">All levels</button>)}
                   <div className="font-mono text-[10px] text-mute pt-3 border-t rule">{area === "levels" ? ("Progress: " + passedCount + " / " + LEVELS.length + " passed") : ("Source: " + (SOURCES[config.source] ? SOURCES[config.source].label : "Custom") + " · " + CAP(config.difficulty))}</div>
                   {area !== "levels" && (<button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full mt-3" disabled={!audioReady}>Settings</button>)}
@@ -1278,7 +1287,7 @@
                   </div>
                 </section>
 
-                <section className="mb-5"><div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div><h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">{isLearn ? "Sweep a control and hear it" : (building ? "..." : (round ? round.prompt : ""))}</h2></section>
+                <section className="mb-5"><div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div><h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">{isLearn ? "Shape the compressor and hear it" : (building ? "..." : (round ? round.prompt : ""))}</h2></section>
 
                 {/* Match */}
                 {!isLearn && round && round.mode === "match" && (
@@ -1300,16 +1309,19 @@
                 )}
                 {!isLearn && round && round.mode !== "match" && <section className="mb-6">{renderOptions()}</section>}
 
-                {/* Learn free-dial */}
+                {/* Learn free-dial — all four controls move together */}
                 {isLearn && (
                   <section className="mb-6">
-                    <div className="eyebrow mb-2">Control</div>
-                    <div className="seg flex-wrap mb-5">{["attack", "release", "ratio", "threshold"].map(c => (<button key={c} className={learnControl === c ? "active" : ""} onClick={() => pickLearnControl(c)} disabled={!audioReady}>{CAP(c)}</button>))}</div>
-                    <div className="card-dark p-5">
-                      <div className="flex items-center justify-between mb-3"><div className="eyebrow">{CAP(learnControl)}</div><div className="font-mono text-sm text-ink">{CONTROLS[learnControl].fmt(ctrlValueAt(learnControl, learnPos))}</div></div>
-                      <input type="range" min="0" max="1000" value={Math.round(learnPos * 1000)} disabled={!audioReady} onChange={(e) => updateLearnLive((+e.target.value) / 1000)} />
-                      <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[learnControl].fmt(CONTROLS[learnControl].min)}</span><span>{CONTROLS[learnControl].fmt(CONTROLS[learnControl].max)}</span></div>
-                      <p className="text-sm text-ink-2 leading-relaxed mt-4">{CTRL_DESC[learnControl]}</p>
+                    <div className="eyebrow mb-3">Controls — move all four</div>
+                    <div className="card-dark p-5 flex flex-col gap-5">
+                      {["threshold", "ratio", "attack", "release"].map(c => (
+                        <div key={c}>
+                          <div className="flex items-center justify-between mb-2"><div className="eyebrow">{CAP(c)}</div><div className="font-mono text-sm text-ink">{CONTROLS[c].fmt(ctrlValueAt(c, learnPos[c]))}</div></div>
+                          <input type="range" min="0" max="1000" value={Math.round(learnPos[c] * 1000)} disabled={!audioReady} onChange={(e) => updateLearnLive(c, (+e.target.value) / 1000)} />
+                          <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[c].fmt(CONTROLS[c].min)}</span><span>{CONTROLS[c].fmt(CONTROLS[c].max)}</span></div>
+                        </div>
+                      ))}
+                      <p className="text-sm text-ink-2 leading-relaxed">These four interact, so there's no single right knob. Move them in combination and listen to how attack and release behave at different thresholds and ratios. A is the dry reference, B is your compressor.</p>
                     </div>
                   </section>
                 )}
@@ -1335,9 +1347,9 @@
                 )}
 
                 <section className="card p-5">
-                  <div className="flex items-center justify-between mb-3"><div className="eyebrow">Transient Scope</div><div className="font-mono text-[10px] text-mute flex items-center gap-3"><span style={{ color: "var(--ink-3)" }}>{roles.A}</span><span style={{ color: "var(--accent)" }}>{roles.B}</span></div></div>
+                  <div className="flex items-center justify-between mb-3"><div className="eyebrow">Transient Scope</div><div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent)" }}>{roles.B}</span></span></div></div>
                   {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden during the question. Trust your ears.</div>)}
-                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Gold is {roles.B}. Compare the transients and the body against {roles.A}.</p>}
+                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. Both are shown together so you can see what the compression is doing to the transients and the body.</p>}
                 </section>
                 </>
                 )}
@@ -3935,30 +3947,19 @@
                 {/* ===== LEFT RAIL — course / progress (desktop only) ===== */}
                 <aside className="bench-left">
                   <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><button className={"btn w-full mb-2 " + (activeModule === "eq" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("eq")}>EQ</button><button className={"btn w-full " + (activeModule === "compression" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("compression")}>Compression</button></div>
-                  {!isLearnMode && weekPlan ? (
+                  {isLearnMode ? (
                     <div className="rail-panel">
-                      <div className="eyebrow mb-2">Course</div>
-                      <div className="font-mono text-[10px] text-mute mb-2">
-                        Level {curriculumWeek} · Task {curriculumTaskIndex + 1} of {weekPlan.tasks.length}
-                        {!nextTaskExists && <span className="text-ink"> · Final</span>}
-                      </div>
-                      <div className="font-display font-semibold text-base leading-snug mb-3">{weekPlan.lessonTitle}</div>
-                      <div className="tick-row mb-4">
-                        {Array.from({ length: questionsPerRound }, (_, i) => (
-                          <div key={i} className={`tick ${i < qInRound ? 'filled' : i === qInRound ? 'current' : ''}`} />
-                        ))}
-                      </div>
-                      <button onClick={() => setShowCurriculum(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Levels</button>
+                      <div className="eyebrow mb-2">Learn</div>
+                      <div className="font-display font-semibold text-base leading-snug mb-2">Explore bands</div>
+                      <p className="text-xs text-ink-2 leading-relaxed mb-3">Pick a frequency and toggle A/B to train your ear. No scoring in Learn.</p>
+                      <button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Settings</button>
                     </div>
                   ) : (
                     <div className="rail-panel">
-                      <div className="eyebrow mb-2">{isLearnMode ? "Learn" : "Course"}</div>
-                      <p className="text-xs text-ink-2 leading-relaxed mb-3">
-                        {isLearnMode
-                          ? "Exploring bands freely — pick a frequency and toggle A/B to train your ear. No scoring in Learn."
-                          : "Pick a lesson to begin training."}
-                      </p>
-                      <button onClick={() => setShowCurriculum(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Levels</button>
+                      <div className="eyebrow mb-2">Mode</div>
+                      <div className="font-display font-semibold text-base leading-snug mb-2">{mode}</div>
+                      <p className="text-xs text-ink-2 leading-relaxed mb-3">{MODE_DESCRIPTIONS[mode]}</p>
+                      <button onClick={() => setShowDrawer(true)} className="btn btn-ghost w-full" disabled={!audioReady}>Settings</button>
                     </div>
                   )}
                 </aside>
@@ -3968,27 +3969,22 @@
                 {!isLearnMode && timeRemaining !== null && !showAnswer && (
                   <div className="mb-4 flex justify-end"><div className={`px-3 py-1 font-mono text-xs ${timeRemaining <= 10 ? 'border border-hot text-hot' : 'border border-line-2 text-ink-2'}`}>{timeRemaining}s</div></div>
                 )}
-                {/* Mode selector + description — hidden in Learn (Learn forces Identify internally) */}
+                {/* Mode selector — description now lives in the left-rail Mode panel (matches Compression) */}
                 {!isLearnMode && (
                   <section className="mb-6">
                     <div className="eyebrow mb-3">Mode</div>
-                    <div className="flex flex-col sm:flex-row sm:items-center gap-3">
-                      <div className="seg flex-wrap">
-                        {["Identify", "Matching", "Return to Flat", "Return to Flat (Memory)"].map(m => (
-                          <button
-                            key={m}
-                            className={mode === m ? "active" : ""}
-                            onClick={() => handleModeChange(m)}
-                            disabled={!audioReady}
-                          >
-                            {m === "Return to Flat (Memory)" ? "RTF · Memory" : m === "Return to Flat" ? "RTF" : m}
-                          </button>
-                        ))}
-                      </div>
+                    <div className="seg flex-wrap">
+                      {["Identify", "Matching", "Return to Flat", "Return to Flat (Memory)"].map(m => (
+                        <button
+                          key={m}
+                          className={mode === m ? "active" : ""}
+                          onClick={() => handleModeChange(m)}
+                          disabled={!audioReady}
+                        >
+                          {m === "Return to Flat (Memory)" ? "RTF · Memory" : m === "Return to Flat" ? "RTF" : m}
+                        </button>
+                      ))}
                     </div>
-                    <p className="text-sm text-mute mt-3 leading-relaxed max-w-2xl">
-                      {MODE_DESCRIPTIONS[mode]}
-                    </p>
                   </section>
                 )}
 
