@@ -584,6 +584,10 @@
 
   <script type="text/babel" data-presets="env,react">
     const { useEffect, useState, useRef, useCallback, useMemo } = React;
+    // Free build: served as lab.html?free=1 (paid build is plain lab.html, unaffected).
+    // Free = limited EQ (Practice + Learn; the guided course is members-only) and no Compression.
+    const IS_FREE = (typeof window !== "undefined") && (window.AU_FREE === true || (function () { try { return new URLSearchParams(window.location.search).get("free") === "1"; } catch (e) { return false; } })());
+    const KIT_FORM_URL = "https://upbeat-creator-1556.kit.com/e6cf75d3ed";
 
     /* ============================================================
        COMPRESSION EAR TRAINER — objective, configurable, with a
@@ -839,6 +843,21 @@
           <span style={{ width: 28, height: 16, borderRadius: 999, background: on ? "var(--accent)" : "var(--panel-3)", border: "1px solid var(--line-2)", position: "relative", display: "inline-block", transition: "background .15s", flexShrink: 0 }}><span style={{ position: "absolute", top: 1, left: on ? 13 : 1, width: 12, height: 12, borderRadius: "50%", background: on ? "#0d0d0e" : "var(--ink-2)", transition: "left .15s" }}></span></span>
           <span className="font-mono text-[10px]" style={{ color: on ? "var(--accent)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: 1, whiteSpace: "nowrap" }}>{label} {on ? "on" : "off"}</span>
         </button>
+      );
+    }
+    // Free build: newsletter signup popup (shown once, after a short session).
+    function NewsletterModal({ onClose }) {
+      return (
+        <div className="overlay" style={{ zIndex: 200 }}>
+          <div className="bg-panel text-ink w-full p-6" style={{ border: "1px solid var(--rule)", maxWidth: 460, position: "relative" }}>
+            <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
+            <div className="eyebrow mb-2">Audio University</div>
+            <h2 className="font-display font-bold text-2xl leading-tight mb-2">Get more free ear training</h2>
+            <p className="text-sm text-mute leading-relaxed mb-4">Join the newsletter for new lessons and tips. You can keep training right after.</p>
+            <iframe src={KIT_FORM_URL} title="Join the newsletter" style={{ width: "100%", height: 440, border: 0, borderRadius: 8, background: "#fff", display: "block" }}></iframe>
+            <button onClick={onClose} className="btn btn-ghost w-full mt-4">Maybe later</button>
+          </div>
+        </div>
       );
     }
     function GrMeter({ nodeRef, active, maxGr = 18 }) {
@@ -3748,6 +3767,9 @@
         STORAGE.set("curriculumWeek", curriculumWeek);
         STORAGE.set("curriculumTaskIndex", curriculumTaskIndex);
         if (!audioReady) return;
+        // Free build: the guided course is members-only, so start free users in Custom
+        // Practice (free-form, doesn't touch course progression) instead of a course task.
+        if (IS_FREE && !isManualSession && !isLearnMode) { startManualSession(manualConfig); return; }
         const task = getCurrentTask();
         if (task) {
           modeChangeSourceRef.current = 'internal';
@@ -3757,6 +3779,11 @@
 
       // Keyboard shortcuts state
       const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+      const [showNewsletter, setShowNewsletter] = useState(false);
+      // Free build: after a short taste (~6 answers), show the newsletter popup once per visitor.
+      useEffect(() => {
+        if (IS_FREE && sessionTotal >= 6 && !STORAGE.get("nlSeen", false)) { setShowNewsletter(true); STORAGE.set("nlSeen", true); }
+      }, [sessionTotal]);
 
       /*
        * Keyboard shortcuts — full QWERTY-friendly operation.
@@ -3881,6 +3908,7 @@
       return (
         <div className="min-h-screen flex flex-col">
           {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} isLoading={audioLoading} error={audioError} />}
+          {showNewsletter && <NewsletterModal onClose={() => setShowNewsletter(false)} />}
           {showTaskComplete && (
             <TaskCompleteModal
               data={taskCompleteData}
@@ -3955,7 +3983,14 @@
 
           {/* ============ MAIN CONTENT ============ */}
           <main className="flex-1 w-full">
-            {showCurriculum ? (
+            {showCurriculum && IS_FREE ? (
+              <div className="max-w-lg mx-auto w-full px-6 py-20 text-center">
+                <div className="eyebrow mb-4">Members only</div>
+                <h2 className="font-display font-bold text-3xl leading-tight mb-4">The guided course is part of membership</h2>
+                <p className="text-mute leading-relaxed mb-8">The 15-level EQ course is for Audio University members. Custom Practice and Learn are free to use here.</p>
+                <button className="btn btn-solid" onClick={() => setShowCurriculum(false)}>Back to Practice</button>
+              </div>
+            ) : showCurriculum ? (
               <CurriculumPicker
                 inline
                 currentLevelId={currentLevelId}
@@ -4855,6 +4890,31 @@
     }
     return EqModuleWrapper;
     })();
+    /* ---------- Free build: Compression is members-only ---------- */
+    function FreeCompressionLock({ activeModule, onSwitchModule }) {
+      return (
+        <div className="min-h-screen">
+          <header className="border-b rule">
+            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between gap-4">
+              <div className="flex items-center" style={{ gap: 12 }}>
+                <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} />
+                <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div>
+              </div>
+              <div className="seg" aria-label="Module">
+                <button className={activeModule === "eq" ? "active" : ""} onClick={() => onSwitchModule("eq")}>EQ</button>
+                <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
+              </div>
+            </div>
+          </header>
+          <main className="max-w-lg mx-auto px-6 py-20 text-center">
+            <div className="eyebrow mb-4">Members only</div>
+            <h2 className="font-display font-bold text-3xl leading-tight mb-4">Compression training is part of membership</h2>
+            <p className="text-mute leading-relaxed mb-8">The compression ear trainer is for Audio University members. The EQ trainer here is free to use.</p>
+            <button className="btn btn-solid" onClick={() => onSwitchModule("eq")}>Back to EQ</button>
+          </main>
+        </div>
+      );
+    }
     /* ---------- App shell: routes between modules in-app (no reload) ---------- */
     function Shell() {
       const [activeModule, setActiveModule] = useState("eq");
@@ -4862,9 +4922,12 @@
       // switching between EQ and Compression never re-prompts the unlock overlay.
       const [audioUnlocked, setAudioUnlocked] = useState(false);
       const shared = { activeModule, onSwitchModule: setActiveModule, audioPreUnlocked: audioUnlocked, onAudioUnlocked: () => setAudioUnlocked(true) };
-      return activeModule === "compression"
-        ? <CompressionModule {...shared} />
-        : <EqModule {...shared} />;
+      if (activeModule === "compression") {
+        return IS_FREE
+          ? <FreeCompressionLock activeModule={activeModule} onSwitchModule={setActiveModule} />
+          : <CompressionModule {...shared} />;
+      }
+      return <EqModule {...shared} />;
     }
 
     const root = ReactDOM.createRoot(document.getElementById("app"));
