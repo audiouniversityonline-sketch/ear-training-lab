@@ -1766,6 +1766,8 @@
      * specs: mono or stereo WAV, 44.1 kHz, 16- or 24-bit, 2–6 seconds, normalized to
      * around -6 dBFS peak so it sits comfortably under the +12 dB EQ moves.
      */
+    // Hidden until the WAV files exist in /sources/. Flip to true to re-enable the picker.
+    const SHOW_SOURCE_LIBRARY = false;
     const SOURCE_LIBRARY = [
       { id: 'kick',         name: 'Kick Drum',         category: 'Drums',      path: 'sources/kick.wav' },
       { id: 'snare',        name: 'Snare Drum',        category: 'Drums',      path: 'sources/snare.wav' },
@@ -4819,8 +4821,8 @@
                 </p>
               </section>
 
-              {/* Source library — curated WAVs */}
-              {onSelectLibrarySource && (
+              {/* Source library — curated WAVs (hidden until the files exist) */}
+              {onSelectLibrarySource && SHOW_SOURCE_LIBRARY && (
                 <section>
                   <div className="eyebrow mb-3">Source Material</div>
                   <p className="text-xs text-mute mb-4 leading-relaxed">
