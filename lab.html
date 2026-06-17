@@ -953,6 +953,87 @@
 
     function paramValOf(preset, p) { if (!preset) return "—"; if (p === "attack") return fmtMs(preset.attack); if (p === "release") return fmtMs(preset.release); if (p === "ratio") return preset.ratio + ":1"; if (p === "threshold") return preset.threshold + " dB"; return ""; }
 
+    /* ---- First-run guided walkthrough (spotlight tour). Each step anchors to a
+       live control via a [data-tour] selector and picks whichever matching element
+       is actually on screen, so it follows the desktop card vs mobile dock split.
+       Next-driven and fully skippable; it never performs actions for the user. ---- */
+    function Walkthrough({ steps, onClose }) {
+      const [i, setI] = useState(0);
+      const [rect, setRect] = useState(null);
+      const step = steps[i] || null;
+
+      const visibleEl = (sel) => {
+        if (!sel) return null;
+        const els = Array.prototype.slice.call(document.querySelectorAll(sel));
+        return els.find((e) => {
+          const cs = window.getComputedStyle(e);
+          if (cs.display === "none" || cs.visibility === "hidden") return false;
+          const r = e.getBoundingClientRect();
+          return r.width > 1 && r.height > 1;
+        }) || null;
+      };
+      const measure = useCallback(() => {
+        const el = step ? visibleEl(step.selector) : null;
+        if (!el) { setRect(null); return; }
+        const r = el.getBoundingClientRect();
+        setRect({ top: r.top, left: r.left, width: r.width, height: r.height });
+      }, [step]);
+
+      useEffect(() => {
+        const el = step ? visibleEl(step.selector) : null;
+        if (el && el.scrollIntoView) { try { el.scrollIntoView({ block: "center", behavior: "smooth" }); } catch (e) { el.scrollIntoView(); } }
+        measure();
+        const t = setTimeout(measure, 380);
+        const onMove = () => measure();
+        window.addEventListener("resize", onMove);
+        window.addEventListener("scroll", onMove, true);
+        return () => { clearTimeout(t); window.removeEventListener("resize", onMove); window.removeEventListener("scroll", onMove, true); };
+      }, [measure]);
+
+      if (!step) return null;
+      const last = i === steps.length - 1;
+      const pad = 8;
+      const hole = rect ? { top: rect.top - pad, left: rect.left - pad, w: rect.width + pad * 2, h: rect.height + pad * 2 } : null;
+      const vw = (typeof window !== "undefined" ? window.innerWidth : 1024);
+      const vh = (typeof window !== "undefined" ? window.innerHeight : 768);
+      const cardW = Math.min(360, vw - 32);
+      let cardStyle;
+      if (!hole) {
+        cardStyle = { top: "50%", left: "50%", transform: "translate(-50%,-50%)", width: cardW };
+      } else {
+        const left = Math.min(Math.max(16, hole.left), Math.max(16, vw - cardW - 16));
+        const below = hole.top + hole.h + 14;
+        if (vh - below > 210) cardStyle = { top: below, left, width: cardW };
+        else cardStyle = { bottom: Math.max(16, vh - hole.top + 14), left, width: cardW };
+      }
+
+      return (
+        <div style={{ position: "fixed", inset: 0, zIndex: 9998 }}>
+          <div style={{ position: "absolute", inset: 0, background: hole ? "transparent" : "rgba(8,8,9,0.78)", pointerEvents: "auto" }} onClick={(e) => e.stopPropagation()} />
+          {hole && (
+            <div style={{ position: "absolute", top: hole.top, left: hole.left, width: hole.w, height: hole.h, borderRadius: 12, border: "2px solid var(--accent)", boxShadow: "0 0 0 9999px rgba(8,8,9,0.78), 0 0 18px rgba(255,201,58,0.45)", pointerEvents: "none", transition: "all 0.25s ease" }} />
+          )}
+          <div className="card" style={{ position: "absolute", padding: 20, pointerEvents: "auto", transition: "top 0.2s ease, left 0.2s ease", ...cardStyle }}>
+            <div className="flex items-center justify-between mb-2">
+              <div className="eyebrow">{"Step " + (i + 1) + " of " + steps.length}</div>
+              <button onClick={onClose} className="text-mute" style={{ fontSize: 10, letterSpacing: 1, textTransform: "uppercase", fontFamily: "var(--font-mono, monospace)" }}>Skip</button>
+            </div>
+            <div className="font-display font-bold italic" style={{ fontSize: 18, lineHeight: 1.2, marginBottom: 8 }}>{step.title}</div>
+            <p className="text-sm text-ink-2 leading-relaxed" style={{ marginBottom: 16 }}>{step.body}</p>
+            <div className="flex items-center justify-between gap-2">
+              <div className="flex" style={{ gap: 6 }}>
+                {steps.map((_, n) => (<span key={n} style={{ width: 6, height: 6, borderRadius: 99, background: n === i ? "var(--accent)" : "var(--line-2)" }} />))}
+              </div>
+              <div className="flex" style={{ gap: 8 }}>
+                {i > 0 && <button className="btn btn-ghost" style={{ padding: "8px 14px" }} onClick={() => setI(i - 1)}>Back</button>}
+                <button className="btn btn-solid" style={{ padding: "8px 16px" }} onClick={() => (last ? onClose() : setI(i + 1))}>{last ? "Got it" : "Next"}</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    }
+
     /* ============================================================ */
     function CompressionModule({ activeModule, onSwitchModule, audioPreUnlocked, onAudioUnlocked }) {
       const ctxRef = useRef(null);
@@ -3840,6 +3921,15 @@
         if (IS_FREE && sessionTotal >= 6 && !STORAGE.get("nlSeen", false)) { setShowNewsletter(true); STORAGE.set("nlSeen", true); }
       }, [sessionTotal]);
 
+      // Free build: first-time visitors get a one-time guided walkthrough of a Matching round,
+      // once audio is live and a round is on screen so every step has a real control to point at.
+      const [showTour, setShowTour] = useState(false);
+      useEffect(() => {
+        if (IS_FREE && audioReady && mode === "Matching" && !isLearnMode && round && !showAnswer && !STORAGE.get("tourSeen", false)) {
+          setShowTour(true); STORAGE.set("tourSeen", true);
+        }
+      }, [audioReady, mode, isLearnMode, round, showAnswer]);
+
       /*
        * Keyboard shortcuts — full QWERTY-friendly operation.
        *   Space      → play/pause
@@ -3964,6 +4054,17 @@
         <div className="min-h-screen flex flex-col">
           {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} isLoading={audioLoading} error={audioError} />}
           {showNewsletter && <NewsletterModal onClose={() => setShowNewsletter(false)} />}
+          {showTour && (
+            <Walkthrough
+              onClose={() => setShowTour(false)}
+              steps={[
+                { title: "Welcome — let's run one round", body: "Matching trains your ear to spot which frequency is boosted. Here's how a round works. You can skip this anytime." },
+                { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play, then switch between B (the target) and C (your copy). One frequency band is boosted on B. Your job is to make C sound the same." },
+                { selector: '[data-tour="frequency"]', title: "Pick the frequency", body: "Click the band you think is boosted. C updates to your pick right away, so you can switch to B and back to check before you commit." },
+                { selector: '[data-tour="submit"]', title: "Check your answer", body: "Hit Submit. You'll see whether you got it and the exact curve, then you move on to the next round. That's the whole loop — your turn." },
+              ]}
+            />
+          )}
           {showTaskComplete && (
             <TaskCompleteModal
               data={taskCompleteData}
@@ -4111,7 +4212,7 @@
                 )}
 
                 {/* Transport + channels — the centerpiece */}
-                <section className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: 'relative' }}>
+                <section data-tour="listen" className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: 'relative' }}>
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
                     <button
                       className="transport"
@@ -4424,7 +4525,7 @@
                 )}
 
                 {((round && !showAnswer && (!round.filters || round.filters.length <= 1) && (!gainOptions || gainOptions.length <= 1)) || isLearnMode) && (
-                  <section className="mb-6 fade-up">
+                  <section data-tour="frequency" className="mb-6 fade-up">
                     <div className="flex items-center justify-between mb-3">
                       <div className="eyebrow">{isLearnMode ? "Pick a Frequency to Hear" : "Frequency"}</div>
                       <div className="font-mono text-[10px] text-mute">
@@ -4513,7 +4614,7 @@
                     }
                   }
                   return (
-                    <section className="mb-6">
+                    <section data-tour="submit" className="mb-6">
                       <button
                         className={`btn ${showAnswer ? 'btn-solid' : round ? 'btn-solid' : 'btn-ghost'} w-full sm:w-auto`}
                         style={{ minWidth: 200, padding: '16px 28px' }}
@@ -4600,7 +4701,7 @@
                 </aside>
 
                 {/* ===== MOBILE TRANSPORT DOCK — audition controls in the thumb zone (hidden >=1024px) ===== */}
-                <div className="transport-dock">
+                <div data-tour="listen" className="transport-dock">
                   <button className="dock-play" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}>
                     <PlayGlyph playing={isPlaying} size={18} />
                   </button>
