@@ -735,21 +735,23 @@
       "threshold|lower": "A lower threshold compresses more of the signal, so it sounds more even.",
     };
 
+    // Compare mode pools: one round picks a knob from the focus pool, then asks a
+    // directional question. "Compare" unifies the old Attack/Release + Ratio modes.
+    const COMPARE_POOLS = { all: ["attack", "release", "ratio"], timing: ["attack", "release"], ratio: ["ratio"] };
     const MODES = {
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
-      time: { label: "Attack / Release", prompt: "", blurb: "A and B are the same sound through the same compressor, with one timing control set differently on B. Judge how fast the compressor reacts, not the sound's own attack, then decide whether B's setting is faster or slower than A's." },
-      ratio: { label: "Ratio", prompt: "Which channel is compressed harder?", blurb: "A and B are the same sound through the same compressor at the same loudness. Only the ratio is different. A higher ratio turns the peaks down more, so it sounds flatter and more even. Pick the channel that's compressed harder." },
+      compare: { label: "Compare", prompt: "", blurb: "A and B run the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release) or how hard it squeezes (ratio). Decide which way it moved." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one setting changed. Name the setting." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Adjust B until it matches A. Easy gives two choices, Medium gives a few steps, Hard is a free slider." },
     };
-    const MODE_ORDER = ["detect", "time", "ratio", "match"];   // "whatChanged" retired for now
+    const MODE_ORDER = ["detect", "compare", "match"];   // "whatChanged" retired for now
 
     // Guided curriculum. Each level fixes a mode, source, and difficulty, and passes at need/of.
     const LEVELS = [
       { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
-      { id: "c3", title: "Fast or slow", mode: "time", source: "drums", difficulty: "easy", need: 6, of: 8 },
-      { id: "c4", title: "Read the move", mode: "time", source: "drums", difficulty: "hard", need: 7, of: 10 },
+      { id: "c3", title: "Fast or slow", mode: "compare", compareFocus: "timing", source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c4", title: "Read the move", mode: "compare", compareFocus: "timing", source: "drums", difficulty: "hard", need: 7, of: 10 },
       { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
       { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
       { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
@@ -1194,15 +1196,10 @@
         { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. The compressed one sounds steadier and more even, with softer peaks." },
         { selector: '[data-tour="answer"]', title: "Make your pick", body: "Click the channel you think is compressed. You'll see if you're right, then move to the next one." },
       ];
-      if (mode === "time") return [
-        { title: "How Attack and Release works", body: "A and B are the same sound through the same compressor, with one timing control set differently on B. Judge the compressor's timing, not the sound's own attack, then decide whether B's is faster or slower than A's." },
-        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how quickly the compressor grabs the sound and lets it go, not to the sound itself." },
-        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Pick whether B's setting is faster or slower than A's. You'll see if you're right, then move on." },
-      ];
-      if (mode === "ratio") return [
-        { title: "How Ratio works", body: "A and B are the same sound through the same compressor at the same loudness. Only the ratio is different. A higher ratio turns the peaks down more." },
-        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. The harder-compressed one sounds flatter and more even, with less punch on the peaks." },
-        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Pick the channel that's compressed harder. You'll see if you're right, then move on." },
+      if (mode === "compare") return [
+        { title: "How Compare works", body: "A and B are the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release), or how hard it squeezes (ratio)." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how the compressor reacts and how hard it squeezes, not to the sound itself." },
+        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Answer this round's question. You'll see if you're right, then move on." },
       ];
       if (mode === "match") return [
         { title: "How Match works", body: "A is the target. Your job is to adjust B until it matches A." },
@@ -1226,7 +1223,7 @@
       const seqRef = useRef(0);
       const learnMakeupRef = useRef(1);
       const learnTimerRef = useRef(null);
-      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchControl: "random" });
+      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchControl: "random", compareFocus: "all" });
       const levelCfgRef = useRef(null);     // active level's config, overrides configRef while playing a level
       const loadedSourceRef = useRef("drums");
 
@@ -1344,18 +1341,22 @@
           const compIsB = Math.random() < 0.5, comp = DETECT_BY_DIFF[diff];
           presetA = compIsB ? null : comp; presetB = compIsB ? comp : null; answer = compIsB ? "B" : "A";
           options = [{ key: "A", label: "A is compressed" }, { key: "B", label: "B is compressed" }]; prompt = MODES.detect.prompt;
-        } else if (m === "time") {
-          const control = Math.random() < 0.5 ? "attack" : "release", slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
-          presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
-          answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's " + control + " is faster" }, { key: "slower", label: "B's " + control + " is slower" }];
-          prompt = "Is B's " + control + " time faster or slower than A's?"; detail = { control, direction: answer };
-        } else if (m === "ratio") {
-          const rr = RATIO_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
-          presetA = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.low : rr.high };
-          presetB = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.high : rr.low };
-          answer = harderIsB ? "B" : "A";
-          options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
-          prompt = MODES.ratio.prompt; detail = { lowRatio: rr.low, highRatio: rr.high, harder: answer };
+        } else if (m === "compare") {
+          const pool = COMPARE_POOLS[cfg.compareFocus] || COMPARE_POOLS.all;
+          const control = pool[Math.floor(Math.random() * pool.length)];
+          if (control === "ratio") {
+            const rr = RATIO_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
+            presetA = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.low : rr.high };
+            presetB = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.high : rr.low };
+            answer = harderIsB ? "B" : "A";
+            options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
+            prompt = "Which channel is compressed harder?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
+          } else {
+            const slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
+            presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
+            answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's " + control + " is faster" }, { key: "slower", label: "B's " + control + " is slower" }];
+            prompt = "Is B's " + control + " time faster or slower than A's?"; detail = { control, direction: answer };
+          }
         } else {
           const pool = cfg.whatChangedPool === 2 ? ["attack", "release"] : ["attack", "release", "ratio", "threshold"];
           const param = pool[Math.floor(Math.random() * pool.length)], wc = WC_BY_DIFF[diff];
@@ -1515,7 +1516,7 @@
           if (ctx.state !== "running") await ctx.suspend();
           loadedSourceRef.current = lv.source; setAudioSource(lv.source);
         }
-        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, matchControl: lv.matchControl || "random" };
+        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, matchControl: lv.matchControl || "random", compareFocus: lv.compareFocus || "all" };
         setActiveLevel(lv); setLevelAnswered(0); setLevelCorrect(0); setLevelResult(null);
         setArea("levels"); setMode(lv.mode); newRound(lv.mode);
       };
@@ -1554,8 +1555,8 @@
         );
       };
 
-      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; if (round.mode === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " time was " + round.detail.direction; if (round.mode === "ratio") return "Channel " + round.answer + " is compressed harder"; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " is compressed harder"; return "B's " + round.detail.control + " time was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
@@ -1709,7 +1710,7 @@
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
                     {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
                     {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak gain reduction on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
-                    {round.mode === "ratio" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span></div>)}
+                    {round.mode === "compare" && round.detail.control === "ratio" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span></div>)}
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
@@ -1779,6 +1780,7 @@
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
                 <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Match, Easy gives two choices, Medium gives four steps, and Hard is a free slider.</p></div>
+                <div><div className="eyebrow mb-2">Compare: focus</div><Seg options={[{ value: "all", label: "All" }, { value: "timing", label: "Timing" }, { value: "ratio", label: "Ratio" }]} value={config.compareFocus} onChange={(v) => setCfg({ compareFocus: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Compare, drill timing (attack/release), ratio, or mix all of them.</p></div>
                 <div><div className="eyebrow mb-2">Match: control</div><Seg options={[{ value: "random", label: "Random" }, { value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchControl} onChange={(v) => setCfg({ matchControl: v })} disabled={!audioReady} /></div>
               </div>
             </div>
