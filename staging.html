@@ -8,6 +8,10 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="theme-color" content="#0e0e10" />
   <title>Ear Training Lab · Audio University</title>
+  <!-- Flag iframe embedding (e.g. Circle) ASAP so CSS can switch to a flowing,
+       non-fixed mobile layout. A viewport-fixed dock anchors to the iframe, not
+       the phone, so it must be disabled when embedded. -->
+  <script>try{if(window.self!==window.top)document.documentElement.classList.add('embedded');}catch(e){document.documentElement.classList.add('embedded');}</script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -534,6 +538,21 @@
       .session-card { padding: 16px; }
       .session-card .accuracy-block { display: none; }
     }
+
+    /* ===== Embedded in an iframe (e.g. Circle community page) =====
+       A position:fixed dock and 100dvh anchor to the IFRAME, not the phone
+       screen, so the dock ends up off-screen and the page scrolls awkwardly.
+       When embedded, flow naturally: drop the fixed dock, show the inline
+       transport instead, and don't force a full-viewport height. */
+    .embedded #app { min-height: 0; }
+    @media (max-width: 1023px) {
+      .embedded .transport-dock { display: none !important; }
+      .embedded .transport-inline { display: block !important; }
+      .embedded .bench { padding-bottom: 24px; }
+    }
+
+    /* Header nav must never clip on narrow widths: let the button groups wrap. */
+    .app-nav { flex-wrap: wrap; }
     .dock-play {
       width: 50px; flex-shrink: 0;
       border: 1px solid var(--line-2);
@@ -1494,7 +1513,7 @@
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block", flexShrink: 0 }} />
                 <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 app-nav">
                 <div className="seg" aria-label="Module">
                   <button className={activeModule === "eq" ? "active" : ""} onClick={() => onSwitchModule("eq")}>EQ</button>
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
@@ -1565,7 +1584,7 @@
                   </section>
                 )}
 
-                <section data-tour="listen" className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: "relative" }}>
+                <section data-tour="listen" className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block transport-inline" style={{ position: "relative" }}>
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
                     <button className="transport" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={20} /></button>
                     <div className="flex-1 grid grid-cols-2 gap-2">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><div className="letter">{ch}</div><div className="role">{roles[ch]}</div></button>); })}</div>
@@ -4215,7 +4234,7 @@
                   <div className="mono" style={{ fontSize: 8, color: 'var(--ink-3)', letterSpacing: 1, textTransform: 'uppercase', marginTop: 2 }}>Equalization</div>
                 </div>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 app-nav">
                 <div className="seg" aria-label="Module">
                   <button className={activeModule === "eq" ? "active" : ""} onClick={() => onSwitchModule("eq")}>EQ</button>
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
@@ -4337,7 +4356,7 @@
                 )}
 
                 {/* Transport + channels — the centerpiece */}
-                <section data-tour="listen" className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block" style={{ position: 'relative' }}>
+                <section data-tour="listen" className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block transport-inline" style={{ position: 'relative' }}>
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
                     <button
                       className="transport"
