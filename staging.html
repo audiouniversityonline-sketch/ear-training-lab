@@ -698,6 +698,14 @@
       medium: { low: 3, high: 6,   threshold: -42 },
       hard:   { low: 3, high: 4.5, threshold: -40 },
     };
+    // Threshold comparison: same ratio (BASE), different threshold. The lower
+    // threshold compresses more of the signal, so it sounds harder. Gap shrinks
+    // with difficulty. Same "which is harder?" question as ratio (both = amount).
+    const THRESH_BY_DIFF = {
+      easy:   { hi: -22, lo: -46 },
+      medium: { hi: -27, lo: -40 },
+      hard:   { hi: -30, lo: -37 },
+    };
     const WC_BY_DIFF = {
       easy:   { attack: 0.003, releaseFast: 0.04, releaseSlow: 0.55, ratio: 12, threshold: -44 },
       medium: { attack: 0.006, releaseFast: 0.06, releaseSlow: 0.42, ratio: 8, threshold: -38 },
@@ -737,8 +745,9 @@
 
     // Compare unifies the old Attack/Release + Ratio modes: one round picks a knob
     // from the user's selected pool, then asks a directional question.
-    const COMPARE_DEFAULT = ["attack", "release", "ratio"];
-    const MATCH_DEFAULT = ["attack", "release", "threshold", "ratio"];
+    // One shared practice pool drives both Compare and Match (both now cover all
+    // four controls). The user checks which controls to practice; rounds draw from it.
+    const PRACTICE_DEFAULT = ["threshold", "ratio", "attack", "release"];
     const MODES = {
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
       compare: { label: "Compare", prompt: "", blurb: "A and B run the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release) or how hard it squeezes (ratio). Decide which way it moved." },
@@ -751,15 +760,15 @@
     const LEVELS = [
       { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
-      { id: "c3", title: "Fast or slow", mode: "compare", comparePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
-      { id: "c4", title: "Read the move", mode: "compare", comparePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
+      { id: "c3", title: "Fast or slow", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c4", title: "Read the move", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
       { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
       { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
       { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c8", title: "Match: stepped", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
       { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
       { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
-      { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", matchPool: ["threshold"], need: 6, of: 8 },
+      { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", practicePool: ["threshold"], need: 6, of: 8 },
     ];
     const LEVELS_KEY = "au_comp_levels_v1";
     const loadPassed = () => { try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}") || {}; } catch (e) { return {}; } };
@@ -1232,7 +1241,7 @@
       const seqRef = useRef(0);
       const learnMakeupRef = useRef(1);
       const learnTimerRef = useRef(null);
-      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchPool: [...MATCH_DEFAULT], comparePool: [...COMPARE_DEFAULT] });
+      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, practicePool: [...PRACTICE_DEFAULT] });
       const levelCfgRef = useRef(null);     // active level's config, overrides configRef while playing a level
       const loadedSourceRef = useRef("drums");
 
@@ -1327,7 +1336,7 @@
       const buildRound = async (m) => {
         const cfg = levelCfgRef.current || configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryLoudE = dryLoudRef.current;
         if (m === "match") {
-          const mpool = (cfg.matchPool && cfg.matchPool.length) ? cfg.matchPool : MATCH_DEFAULT;
+          const mpool = (cfg.practicePool && cfg.practicePool.length) ? cfg.practicePool : PRACTICE_DEFAULT;
           const control = mpool[Math.floor(Math.random() * mpool.length)];
           const steps = MATCH_STEPS[diff];
           if (steps >= 2) {
@@ -1352,7 +1361,7 @@
           presetA = compIsB ? null : comp; presetB = compIsB ? comp : null; answer = compIsB ? "B" : "A";
           options = [{ key: "A", label: "A is compressed" }, { key: "B", label: "B is compressed" }]; prompt = MODES.detect.prompt;
         } else if (m === "compare") {
-          const pool = (cfg.comparePool && cfg.comparePool.length) ? cfg.comparePool : COMPARE_DEFAULT;
+          const pool = (cfg.practicePool && cfg.practicePool.length) ? cfg.practicePool : PRACTICE_DEFAULT;
           const control = pool[Math.floor(Math.random() * pool.length)];
           if (control === "ratio") {
             const rr = RATIO_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
@@ -1361,6 +1370,13 @@
             answer = harderIsB ? "B" : "A";
             options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
             prompt = "Which channel is compressed harder?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
+          } else if (control === "threshold") {
+            const tt = THRESH_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
+            presetA = { ...BASE, threshold: harderIsB ? tt.hi : tt.lo };
+            presetB = { ...BASE, threshold: harderIsB ? tt.lo : tt.hi };
+            answer = harderIsB ? "B" : "A";
+            options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
+            prompt = "Which channel is compressed harder?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
           } else {
             const slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
             presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
@@ -1526,7 +1542,7 @@
           if (ctx.state !== "running") await ctx.suspend();
           loadedSourceRef.current = lv.source; setAudioSource(lv.source);
         }
-        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, matchPool: lv.matchPool || (lv.matchControl ? [lv.matchControl] : MATCH_DEFAULT), comparePool: lv.comparePool || COMPARE_DEFAULT };
+        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, practicePool: lv.practicePool || lv.comparePool || lv.matchPool || (lv.matchControl ? [lv.matchControl] : PRACTICE_DEFAULT) };
         setActiveLevel(lv); setLevelAnswered(0); setLevelCorrect(0); setLevelResult(null);
         setArea("levels"); setMode(lv.mode); newRound(lv.mode);
       };
@@ -1565,8 +1581,8 @@
         );
       };
 
-      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " is compressed harder"; return "B's " + round.detail.control + " time was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; if (round.detail.control === "threshold") return "Channel " + round.answer + " uses a lower threshold (" + round.detail.loThresh + " dB versus " + round.detail.hiThresh + " dB), so more of the signal is compressed. It sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio" || round.detail.control === "threshold") return "Channel " + round.answer + " is compressed harder"; return "B's " + round.detail.control + " time was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
@@ -1721,6 +1737,7 @@
                     {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
                     {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak gain reduction on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
                     {round.mode === "compare" && round.detail.control === "ratio" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span></div>)}
+                    {round.mode === "compare" && round.detail.control === "threshold" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Threshold</span><span className="text-ink">A {round.presetA.threshold} dB</span><span className="text-ink-3">·</span><span className="text-ink">B {round.presetB.threshold} dB</span></div>)}
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
@@ -1790,8 +1807,7 @@
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
                 <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Match, Easy gives two choices, Medium gives four steps, and Hard is a free slider.</p></div>
-                <div><div className="eyebrow mb-2">Compare: practice</div><MultiSeg options={[{ value: "attack", label: "Attack" }, { value: "release", label: "Release" }, { value: "ratio", label: "Ratio" }]} value={config.comparePool} onChange={(v) => setCfg({ comparePool: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Check any combination. Compare draws only from what's selected.</p></div>
-                <div><div className="eyebrow mb-2">Match: practice</div><MultiSeg options={[{ value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchPool} onChange={(v) => setCfg({ matchPool: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Check any combination. Match draws only from what's selected.</p></div>
+                <div><div className="eyebrow mb-2">Practice controls</div><MultiSeg options={[{ value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.practicePool} onChange={(v) => setCfg({ practicePool: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Check any combination. Compare and Match both draw only from the controls you select.</p></div>
               </div>
             </div>
           )}
