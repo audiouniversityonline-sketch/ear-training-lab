@@ -735,9 +735,10 @@
       "threshold|lower": "A lower threshold compresses more of the signal, so it sounds more even.",
     };
 
-    // Compare mode pools: one round picks a knob from the focus pool, then asks a
-    // directional question. "Compare" unifies the old Attack/Release + Ratio modes.
-    const COMPARE_POOLS = { all: ["attack", "release", "ratio"], timing: ["attack", "release"], ratio: ["ratio"] };
+    // Compare unifies the old Attack/Release + Ratio modes: one round picks a knob
+    // from the user's selected pool, then asks a directional question.
+    const COMPARE_DEFAULT = ["attack", "release", "ratio"];
+    const MATCH_DEFAULT = ["attack", "release", "threshold", "ratio"];
     const MODES = {
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
       compare: { label: "Compare", prompt: "", blurb: "A and B run the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release) or how hard it squeezes (ratio). Decide which way it moved." },
@@ -750,15 +751,15 @@
     const LEVELS = [
       { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
-      { id: "c3", title: "Fast or slow", mode: "compare", compareFocus: "timing", source: "drums", difficulty: "easy", need: 6, of: 8 },
-      { id: "c4", title: "Read the move", mode: "compare", compareFocus: "timing", source: "drums", difficulty: "hard", need: 7, of: 10 },
+      { id: "c3", title: "Fast or slow", mode: "compare", comparePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c4", title: "Read the move", mode: "compare", comparePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
       { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
       { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
       { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c8", title: "Match: stepped", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
       { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
       { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
-      { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", matchControl: "threshold", need: 6, of: 8 },
+      { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", matchPool: ["threshold"], need: 6, of: 8 },
     ];
     const LEVELS_KEY = "au_comp_levels_v1";
     const loadPassed = () => { try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}") || {}; } catch (e) { return {}; } };
@@ -1032,6 +1033,14 @@
     }
     function Metric({ label, value, sub }) { return (<div><div className="eyebrow mb-2">{label}</div><div className="font-display font-bold italic text-3xl sm:text-4xl leading-none">{value}</div>{sub && <div className="font-mono text-xs text-mute mt-2">{sub}</div>}</div>); }
     function Seg({ options, value, onChange, disabled }) { return (<div className="seg flex-wrap">{options.map(o => (<button key={String(o.value)} className={value === o.value ? "active" : ""} onClick={() => onChange(o.value)} disabled={disabled}>{o.label}</button>))}</div>); }
+    // Multi-select toggle group: value is an array of selected keys; tapping toggles
+    // one on/off. Never goes empty (the just-tapped key stays). Used to pick which
+    // controls Compare and Match draw from, so a student can focus one or several.
+    function MultiSeg({ options, value, onChange, disabled }) {
+      const set = Array.isArray(value) ? value : [];
+      const toggle = (key) => { const has = set.includes(key); let next = has ? set.filter(k => k !== key) : [...set, key]; if (next.length === 0) next = [key]; onChange(next); };
+      return (<div className="seg flex-wrap" role="group">{options.map(o => { const on = set.includes(o.value); return (<button key={String(o.value)} className={on ? "active" : ""} aria-pressed={on} onClick={() => toggle(o.value)} disabled={disabled}>{o.label}</button>); })}</div>);
+    }
 
     function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
       return (
@@ -1223,7 +1232,7 @@
       const seqRef = useRef(0);
       const learnMakeupRef = useRef(1);
       const learnTimerRef = useRef(null);
-      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchControl: "random", compareFocus: "all" });
+      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchPool: [...MATCH_DEFAULT], comparePool: [...COMPARE_DEFAULT] });
       const levelCfgRef = useRef(null);     // active level's config, overrides configRef while playing a level
       const loadedSourceRef = useRef("drums");
 
@@ -1318,7 +1327,8 @@
       const buildRound = async (m) => {
         const cfg = levelCfgRef.current || configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryLoudE = dryLoudRef.current;
         if (m === "match") {
-          const control = cfg.matchControl === "random" ? ["attack", "release", "threshold", "ratio"][Math.floor(Math.random() * 4)] : cfg.matchControl;
+          const mpool = (cfg.matchPool && cfg.matchPool.length) ? cfg.matchPool : MATCH_DEFAULT;
+          const control = mpool[Math.floor(Math.random() * mpool.length)];
           const steps = MATCH_STEPS[diff];
           if (steps >= 2) {
             const N = steps;
@@ -1342,7 +1352,7 @@
           presetA = compIsB ? null : comp; presetB = compIsB ? comp : null; answer = compIsB ? "B" : "A";
           options = [{ key: "A", label: "A is compressed" }, { key: "B", label: "B is compressed" }]; prompt = MODES.detect.prompt;
         } else if (m === "compare") {
-          const pool = COMPARE_POOLS[cfg.compareFocus] || COMPARE_POOLS.all;
+          const pool = (cfg.comparePool && cfg.comparePool.length) ? cfg.comparePool : COMPARE_DEFAULT;
           const control = pool[Math.floor(Math.random() * pool.length)];
           if (control === "ratio") {
             const rr = RATIO_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
@@ -1516,7 +1526,7 @@
           if (ctx.state !== "running") await ctx.suspend();
           loadedSourceRef.current = lv.source; setAudioSource(lv.source);
         }
-        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, matchControl: lv.matchControl || "random", compareFocus: lv.compareFocus || "all" };
+        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, matchPool: lv.matchPool || (lv.matchControl ? [lv.matchControl] : MATCH_DEFAULT), comparePool: lv.comparePool || COMPARE_DEFAULT };
         setActiveLevel(lv); setLevelAnswered(0); setLevelCorrect(0); setLevelResult(null);
         setArea("levels"); setMode(lv.mode); newRound(lv.mode);
       };
@@ -1780,8 +1790,8 @@
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
                 <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Match, Easy gives two choices, Medium gives four steps, and Hard is a free slider.</p></div>
-                <div><div className="eyebrow mb-2">Compare: focus</div><Seg options={[{ value: "all", label: "All" }, { value: "timing", label: "Timing" }, { value: "ratio", label: "Ratio" }]} value={config.compareFocus} onChange={(v) => setCfg({ compareFocus: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Compare, drill timing (attack/release), ratio, or mix all of them.</p></div>
-                <div><div className="eyebrow mb-2">Match: control</div><Seg options={[{ value: "random", label: "Random" }, { value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchControl} onChange={(v) => setCfg({ matchControl: v })} disabled={!audioReady} /></div>
+                <div><div className="eyebrow mb-2">Compare: practice</div><MultiSeg options={[{ value: "attack", label: "Attack" }, { value: "release", label: "Release" }, { value: "ratio", label: "Ratio" }]} value={config.comparePool} onChange={(v) => setCfg({ comparePool: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Check any combination. Compare draws only from what's selected.</p></div>
+                <div><div className="eyebrow mb-2">Match: practice</div><MultiSeg options={[{ value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchPool} onChange={(v) => setCfg({ matchPool: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Check any combination. Match draws only from what's selected.</p></div>
               </div>
             </div>
           )}
