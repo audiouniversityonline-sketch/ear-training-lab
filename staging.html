@@ -1004,11 +1004,13 @@
     function GrBars({ a, b, c, three, active, maxGr = 18 }) {
       const Bar = ({ label, v }) => {
         const segs = 14, lit = Math.round((Math.min(v, maxGr) / maxGr) * segs);
+        // Gain reduction reads right-to-left: 0 dB sits at the right edge and the
+        // bar grows leftward as more reduction is applied (opposite of a level meter).
         return (
           <div>
             <div className="flex items-center justify-between mb-1"><div className="font-mono text-[10px]" style={{ color: "var(--ink-2)" }}>{label}</div><div className="font-mono text-[10px] text-mute">{active ? (v > 0.1 ? ("-" + v.toFixed(1) + " dB") : "0 dB") : "—"}</div></div>
             <div style={{ display: "flex", gap: 2 }}>
-              {Array.from({ length: segs }).map((_, i) => { const on = active && i < lit; const frac = i / segs; const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)"; return <div key={i} style={{ flex: 1, height: 8, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />; })}
+              {Array.from({ length: segs }).map((_, i) => { const fromRight = segs - 1 - i; const on = active && fromRight < lit; const frac = fromRight / segs; const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)"; return <div key={i} style={{ flex: 1, height: 8, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />; })}
             </div>
           </div>
         );
