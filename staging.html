@@ -975,22 +975,50 @@
         </div>
       );
     }
-    function GrMeter({ nodeRef, active, maxGr = 18 }) {
-      const [gr, setGr] = useState(0);
-      useEffect(() => {
-        if (!active) { setGr(0); return; }
-        let raf; const tick = () => { const node = nodeRef.current; let r = 0; if (node) r = (typeof node.reduction === "number") ? node.reduction : ((node.reduction && node.reduction.value) || 0); setGr(Math.max(0, -r)); raf = requestAnimationFrame(tick); };
-        raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
-      }, [active]);
-      const segs = 14, lit = Math.round((Math.min(gr, maxGr) / maxGr) * segs);
+    // Dual A/B gain-reduction meter with peak-hold so the two channels can be
+    // compared reliably. The raw .reduction value swings violently per transient
+    // and only one channel is "monitored" at a time, so switching A<->B compared
+    // different moments. Reading BOTH compressors every frame and holding the peak
+    // (gentle decay) gives a stable, side-by-side read that matches the answer.
+    function GrBars({ a, b, active, maxGr = 18 }) {
+      const Bar = ({ label, v }) => {
+        const segs = 14, lit = Math.round((Math.min(v, maxGr) / maxGr) * segs);
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-1"><div className="font-mono text-[10px]" style={{ color: "var(--ink-2)" }}>{label}</div><div className="font-mono text-[10px] text-mute">{active ? (v > 0.1 ? ("-" + v.toFixed(1) + " dB") : "0 dB") : "—"}</div></div>
+            <div style={{ display: "flex", gap: 2 }}>
+              {Array.from({ length: segs }).map((_, i) => { const on = active && i < lit; const frac = i / segs; const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)"; return <div key={i} style={{ flex: 1, height: 8, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />; })}
+            </div>
+          </div>
+        );
+      };
       return (
         <div>
-          <div className="flex items-center justify-between mb-2"><div className="eyebrow">Gain Reduction</div><div className="font-mono text-[10px] text-mute">{active ? (gr > 0.1 ? ("-" + gr.toFixed(1) + " dB") : "0 dB") : "—"}</div></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {Array.from({ length: segs }).map((_, i) => { const on = active && i < lit; const frac = i / segs; const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)"; return <div key={i} style={{ height: 7, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />; })}
+          <div className="eyebrow mb-3">Gain Reduction</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Bar label="A" v={a} />
+            <Bar label="B" v={b} />
           </div>
         </div>
       );
+    }
+    function GrMeter({ nodesRef, active, maxGr = 18 }) {
+      const [vals, setVals] = useState({ a: 0, b: 0 });
+      const held = useRef({ a: 0, b: 0 });
+      useEffect(() => {
+        if (!active) { held.current = { a: 0, b: 0 }; setVals({ a: 0, b: 0 }); return; }
+        const red = (node) => { if (!node) return 0; const r = (typeof node.reduction === "number") ? node.reduction : ((node.reduction && node.reduction.value) || 0); return Math.max(0, -r); };
+        let raf; const tick = () => {
+          const ns = nodesRef.current;
+          const ia = ns ? red(ns.compA) : 0, ib = ns ? red(ns.compB) : 0;
+          held.current.a = Math.max(ia, held.current.a * 0.93);   // peak-hold, ~1s decay
+          held.current.b = Math.max(ib, held.current.b * 0.93);
+          setVals({ a: held.current.a, b: held.current.b });
+          raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
+      }, [active]);
+      return <GrBars a={vals.a} b={vals.b} active={active} maxGr={maxGr} />;
     }
     function SettingsReadout({ preset }) {
       const rows = preset ? [["Ratio", preset.ratio + ":1"], ["Threshold", preset.threshold + " dB"], ["Attack", fmtMs(preset.attack)], ["Release", fmtMs(preset.release)]] : [["Ratio", "—"], ["Threshold", "—"], ["Attack", "—"], ["Release", "Bypassed"]];
@@ -1681,7 +1709,7 @@
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
                     {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
                     {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak gain reduction on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
-                    {round.mode === "ratio" && (<div className="flex items-center gap-4 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span><span className="text-ink-3">·</span><span className="text-mute">peak GR ≈ {Math.round(Math.max(round.grA, round.grB))} dB</span></div>)}
+                    {round.mode === "ratio" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span></div>)}
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
@@ -1718,7 +1746,7 @@
                     <div className="mt-5 accuracy-block"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
                   </section>
                 )}
-                {!inLevelMenu && (<section className="card p-5 sm:p-6 reveal-only"><GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p></section>)}
+                {!inLevelMenu && (<section className="card p-5 sm:p-6 reveal-only"><GrMeter nodesRef={nodesRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Both channels, live. The taller bar is compressed harder." : "Revealed with the answer."}</p></section>)}
                 {!inLevelMenu && (<section className="pt-2 kbd-hints"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
               </aside>
 
