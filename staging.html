@@ -678,6 +678,7 @@
     const clampMakeup = (m) => Math.max(0.1, Math.min(4, m));
     const CAP = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const fmtMs = (s) => Math.round(s * 1000) + " ms";
+    const fmtRatio = (v) => (Number.isInteger(v) ? v : v.toFixed(1)) + ":1";
 
     const DETECT_BY_DIFF = {
       easy:   { threshold: -34, knee: 6, ratio: 8,   attack: 0.005, release: 0.14 },
@@ -688,6 +689,14 @@
       easy:   { attack: { fast: 0.003, slow: 0.12 }, release: { fast: 0.03, slow: 0.5 } },
       medium: { attack: { fast: 0.006, slow: 0.06 }, release: { fast: 0.06, slow: 0.34 } },
       hard:   { attack: { fast: 0.012, slow: 0.032 }, release: { fast: 0.1, slow: 0.28 } },
+    };
+    // Ratio comparison: both channels compressed, differing only in ratio. A lower
+    // threshold than BASE so the signal is driven well into compression and the ratio
+    // difference is clearly audible. The gap shrinks with difficulty.
+    const RATIO_BY_DIFF = {
+      easy:   { low: 2, high: 10,  threshold: -44 },
+      medium: { low: 3, high: 6,   threshold: -42 },
+      hard:   { low: 3, high: 4.5, threshold: -40 },
     };
     const WC_BY_DIFF = {
       easy:   { attack: 0.003, releaseFast: 0.04, releaseSlow: 0.55, ratio: 12, threshold: -44 },
@@ -729,10 +738,11 @@
     const MODES = {
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
       time: { label: "Attack / Release", prompt: "", blurb: "A and B are the same sound through the same compressor, with one timing control set differently on B. Judge how fast the compressor reacts, not the sound's own attack, then decide whether B's setting is faster or slower than A's." },
+      ratio: { label: "Ratio", prompt: "Which channel is compressed harder?", blurb: "A and B are the same sound through the same compressor at the same loudness. Only the ratio is different. A higher ratio turns the peaks down more, so it sounds flatter and more even. Pick the channel that's compressed harder." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one setting changed. Name the setting." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Adjust B until it matches A. Easy gives two choices, Medium gives a few steps, Hard is a free slider." },
     };
-    const MODE_ORDER = ["detect", "time", "match"];   // "whatChanged" retired for now
+    const MODE_ORDER = ["detect", "time", "ratio", "match"];   // "whatChanged" retired for now
 
     // Guided curriculum. Each level fixes a mode, source, and difficulty, and passes at need/of.
     const LEVELS = [
@@ -1161,6 +1171,11 @@
         { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how quickly the compressor grabs the sound and lets it go, not to the sound itself." },
         { selector: '[data-tour="answer"]', title: "Make your pick", body: "Pick whether B's setting is faster or slower than A's. You'll see if you're right, then move on." },
       ];
+      if (mode === "ratio") return [
+        { title: "How Ratio works", body: "A and B are the same sound through the same compressor at the same loudness. Only the ratio is different. A higher ratio turns the peaks down more." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. The harder-compressed one sounds flatter and more even, with less punch on the peaks." },
+        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Pick the channel that's compressed harder. You'll see if you're right, then move on." },
+      ];
       if (mode === "match") return [
         { title: "How Match works", body: "A is the target. Your job is to adjust B until it matches A." },
         { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. A is the target, B is yours." },
@@ -1306,6 +1321,13 @@
           presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
           answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's " + control + " is faster" }, { key: "slower", label: "B's " + control + " is slower" }];
           prompt = "Is B's " + control + " time faster or slower than A's?"; detail = { control, direction: answer };
+        } else if (m === "ratio") {
+          const rr = RATIO_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
+          presetA = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.low : rr.high };
+          presetB = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.high : rr.low };
+          answer = harderIsB ? "B" : "A";
+          options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
+          prompt = MODES.ratio.prompt; detail = { lowRatio: rr.low, highRatio: rr.high, harder: answer };
         } else {
           const pool = cfg.whatChangedPool === 2 ? ["attack", "release"] : ["attack", "release", "ratio", "threshold"];
           const param = pool[Math.floor(Math.random() * pool.length)], wc = WC_BY_DIFF[diff];
@@ -1504,8 +1526,8 @@
         );
       };
 
-      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " time was " + round.detail.direction; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; if (round.mode === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " time was " + round.detail.direction; if (round.mode === "ratio") return "Channel " + round.answer + " is compressed harder"; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
@@ -1659,6 +1681,7 @@
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
                     {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
                     {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak gain reduction on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
+                    {round.mode === "ratio" && (<div className="flex items-center gap-4 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span><span className="text-ink-3">·</span><span className="text-mute">peak GR ≈ {Math.round(Math.max(round.grA, round.grB))} dB</span></div>)}
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
