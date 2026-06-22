@@ -709,10 +709,10 @@
     // Rank: three values of one control, always listed least->most (compressed) or
     // fastest->slowest. `base` modifies the other settings so the difference is audible.
     const RANK_SETS = {
-      ratio:     { base: { threshold: -42 }, easy: [2, 5, 12],        medium: [3, 5, 9],          hard: [3.5, 5, 7.5],         label: "least to most compressed" },
-      threshold: { base: { ratio: 5 },       easy: [-22, -34, -46],   medium: [-26, -34, -42],    hard: [-29, -34, -40],       label: "least to most compressed" },
-      attack:    { base: {},                 easy: [0.003, 0.02, 0.09], medium: [0.005, 0.018, 0.055], hard: [0.008, 0.02, 0.042], label: "fastest to slowest attack" },
-      release:   { base: {},                 easy: [0.04, 0.15, 0.45], medium: [0.06, 0.16, 0.34], hard: [0.08, 0.16, 0.28],     label: "fastest to slowest release" },
+      ratio:     { base: { threshold: -44 }, easy: [1.5, 4, 16],        medium: [2.5, 5, 11],       hard: [3, 5, 8],             label: "least to most compressed" },
+      threshold: { base: { ratio: 6 },       easy: [-16, -33, -50],     medium: [-22, -34, -46],    hard: [-28, -34, -41],       label: "least to most compressed" },
+      attack:    { base: {},                 easy: [0.001, 0.03, 0.12], medium: [0.004, 0.02, 0.075], hard: [0.007, 0.02, 0.05], label: "fastest to slowest attack" },
+      release:   { base: {},                 easy: [0.025, 0.18, 0.55], medium: [0.05, 0.16, 0.4],  hard: [0.07, 0.16, 0.3],     label: "fastest to slowest release" },
     };
     const WC_BY_DIFF = {
       easy:   { attack: 0.003, releaseFast: 0.04, releaseSlow: 0.55, ratio: 12, threshold: -44 },
@@ -1286,6 +1286,7 @@
       const [matchIndex, setMatchIndex] = useState(0);
       const [matchResult, setMatchResult] = useState(null);
       const [rankOrder, setRankOrder] = useState([]);   // channels tapped in order, for Rank mode
+      const [rankResult, setRankResult] = useState(null);   // { exact, close } after a rank submit
       const [matchScope, setMatchScope] = useState(null);
       const [scopeMatch, setScopeMatch] = useState(true);   // level match for the transient scope (what you see)
       const [audioMatch, setAudioMatch] = useState(true);   // level match for the audio (what you hear)
@@ -1435,7 +1436,7 @@
 
       const newRound = async (m) => {
         const useMode = m || mode, seq = ++seqRef.current;
-        setBuilding(true); setSelected(null); setShowAnswer(false); setLastCorrect(null); setMatchResult(null); setMatchScope(null); setRankOrder([]);
+        setBuilding(true); setSelected(null); setShowAnswer(false); setLastCorrect(null); setMatchResult(null); setMatchScope(null); setRankOrder([]); setRankResult(null);
         const r = await buildRound(useMode);
         if (seq !== seqRef.current) return;
         setRound(r);
@@ -1496,8 +1497,13 @@
       const rankTap = (ch) => { if (showAnswer || building) { switchToChannel(ch); return; } switchToChannel(ch); setRankOrder(prev => (prev.includes(ch) || prev.length >= 3) ? prev : [...prev, ch]); };
       const submitRank = () => {
         if (!round || round.mode !== "rank" || showAnswer || building || rankOrder.length !== 3) return;
-        const correct = rankOrder.join("") === round.order.join("");
-        setShowAnswer(true); setLastCorrect(correct); recordResult(correct);
+        // Score by how close the order is: count out-of-order pairs (inversions).
+        // 0 = spot on, 1 = one swap (close, still a pass), 2+ = not quite.
+        const correctPos = {}; round.order.forEach((ch, i) => { correctPos[ch] = i; });
+        const r = rankOrder.map(ch => correctPos[ch]);
+        let inv = 0; for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) if (r[i] > r[j]) inv++;
+        const exact = inv === 0, close = inv === 1, within = exact || close;
+        setRankResult({ exact, close }); setShowAnswer(true); setLastCorrect(within); recordResult(within);
       };
 
       const nextRound = () => {
@@ -1798,7 +1804,8 @@
                 {/* Reveal — rank */}
                 {!isLearn && showAnswer && round && round.mode === "rank" && (
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
-                    <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? "✓ Correct" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{round.orderLabel}</div></div>
+                    <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{rankResult && rankResult.exact ? "✓ Spot on" : rankResult && rankResult.close ? "✓ Close" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{round.orderLabel}</div></div>
+                    {rankResult && rankResult.close && <p className="text-xs text-mute mb-2">One pair swapped — you had the overall order, just the two closest the other way around.</p>}
                     <p className="text-sm text-ink-2 leading-relaxed mb-3">The correct order, {round.orderLabel}:</p>
                     <div className="flex flex-col gap-1.5 font-mono text-xs">
                       {round.order.map((ch, i) => (<div key={ch} className="flex items-center gap-3"><span className="text-mute" style={{ width: 18 }}>#{i + 1}</span><span className="text-ink" style={{ width: 84 }}>Channel {ch}</span><span style={{ color: "var(--accent)" }}>{round.valueLabel[ch]}</span></div>))}
