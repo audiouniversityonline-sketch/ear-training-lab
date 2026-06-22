@@ -587,6 +587,8 @@
     // Free build: served as lab.html?free=1 (paid build is plain lab.html, unaffected).
     // Free = limited EQ (Practice + Learn; the guided course is members-only) and no Compression.
     const IS_FREE = (typeof window !== "undefined") && (window.AU_FREE === true || (function () { try { return new URLSearchParams(window.location.search).get("free") === "1"; } catch (e) { return false; } })());
+    // Membership upgrade URL — centralized so it's one line to update if it ever changes.
+    const MEMBERSHIP_URL = "https://audiouniversityonline.com/membership";
     // Kit (account upbeat-creator-1556, form uid e6cf75d3ed). We post to the public
     // form endpoint with our own styled field instead of embedding Kit's hosted form.
     const KIT_FORM_ID = "9577831";
@@ -2763,6 +2765,7 @@
                       </div>
                     ))}
                   </div>
+                  <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>See the Membership →</a>
                 </div>
               )}
 
@@ -2773,9 +2776,10 @@
                   <div className="font-display font-bold italic text-2xl leading-tight mb-3">
                     {lockedLevel.name}
                   </div>
-                  <p className="text-sm leading-relaxed" style={{ color: 'var(--ink)' }}>
+                  <p className="text-sm leading-relaxed mb-4" style={{ color: 'var(--ink)' }}>
                     Audio University releases new training levels regularly. Members get every level as it ships.
                   </p>
+                  <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>See the Membership →</a>
                 </div>
               )}
 
@@ -4246,7 +4250,10 @@
                 <div className="eyebrow mb-4">Members only</div>
                 <h2 className="font-display font-bold text-3xl leading-tight mb-4">The guided course is part of membership</h2>
                 <p className="text-mute leading-relaxed mb-8">The 15-level EQ course is for Audio University members. Custom Practice and Learn are free to use here.</p>
-                <button className="btn btn-solid" onClick={() => setShowCurriculum(false)}>Back to Practice</button>
+                <div className="flex items-center justify-center gap-3 flex-wrap">
+                  <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>See the Membership →</a>
+                  <button className="btn btn-ghost" onClick={() => setShowCurriculum(false)}>Back to Practice</button>
+                </div>
               </div>
             ) : showCurriculum ? (
               <CurriculumPicker
@@ -5170,7 +5177,10 @@
             <div className="eyebrow mb-4">Members only</div>
             <h2 className="font-display font-bold text-3xl leading-tight mb-4">Compression training is part of membership</h2>
             <p className="text-mute leading-relaxed mb-8">The compression ear trainer is for Audio University members. The EQ trainer here is free to use.</p>
-            <button className="btn btn-solid" onClick={() => onSwitchModule("eq")}>Back to EQ</button>
+            <div className="flex items-center justify-center gap-3 flex-wrap">
+              <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>See the Membership →</a>
+              <button className="btn btn-ghost" onClick={() => onSwitchModule("eq")}>Back to EQ</button>
+            </div>
           </main>
         </div>
       );
