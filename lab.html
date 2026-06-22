@@ -10,8 +10,26 @@
   <title>Ear Training Lab · Audio University</title>
   <!-- Flag iframe embedding (e.g. Circle) ASAP so CSS can switch to a flowing,
        non-fixed mobile layout. A viewport-fixed dock anchors to the iframe, not
-       the phone, so it must be disabled when embedded. -->
-  <script>try{if(window.self!==window.top)document.documentElement.classList.add('embedded');}catch(e){document.documentElement.classList.add('embedded');}</script>
+       the phone, so it must be disabled when embedded. Then broadcast our content
+       height to the parent so an auto-resizing embed can grow/shrink to fit
+       (no inner scrollbar). Harmless if the parent isn't listening. -->
+  <script>
+    try {
+      if (window.self !== window.top) {
+        document.documentElement.classList.add('embedded');
+        var __etlPostHeight = function () {
+          var h = Math.ceil(document.documentElement.scrollHeight);
+          try { window.parent.postMessage({ type: 'etl:height', height: h }, '*'); } catch (e) {}
+        };
+        window.addEventListener('load', function () {
+          __etlPostHeight();
+          try { new ResizeObserver(__etlPostHeight).observe(document.body); } catch (e) {}
+          window.addEventListener('resize', __etlPostHeight);
+          setInterval(__etlPostHeight, 800);
+        });
+      }
+    } catch (e) { try { document.documentElement.classList.add('embedded'); } catch (e2) {} }
+  </script>
 
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
