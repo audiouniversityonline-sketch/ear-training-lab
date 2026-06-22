@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
@@ -520,6 +520,20 @@
       box-shadow: 0 -8px 24px rgba(0, 0, 0, 0.5);
     }
     @media (min-width: 1024px) { .transport-dock { display: none; } }
+
+    /* ===== Mobile decluttering (< 1024px) =====
+       Keep the training loop (question + answers + dock) on one screen.
+       Reveal-only panels (transient scope, GR meter) stay hidden until the
+       answer is shown; the bench gets a `revealed` class when showVisuals is
+       true. Keyboard hints are pointless on touch. */
+    @media (max-width: 1023px) {
+      .bench { gap: 14px; padding-bottom: 88px; }
+      .reveal-only { display: none; }
+      .bench.revealed .reveal-only { display: block; }
+      .kbd-hints { display: none; }
+      .session-card { padding: 16px; }
+      .session-card .accuracy-block { display: none; }
+    }
     .dock-play {
       width: 50px; flex-shrink: 0;
       border: 1px solid var(--line-2);
@@ -1495,7 +1509,7 @@
           </header>
 
           <main className="flex-1 w-full">
-            <div className="bench">
+            <div className={"bench" + (showVisuals ? " revealed" : "")}>
               <aside className="bench-left">
                 <div className="rail-panel mb-4"><div className="eyebrow mb-3">Modules</div><button className={"btn w-full mb-2 " + (activeModule === "eq" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("eq")}>EQ</button><button className={"btn w-full " + (activeModule === "compression" ? "btn-solid" : "btn-ghost")} onClick={() => onSwitchModule("compression")}>Compression</button></div>
                 <div className="rail-panel">
@@ -1621,7 +1635,7 @@
                   </section>
                 )}
 
-                <section className="card p-5">
+                <section className="card p-5 reveal-only">
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-3">
                       <div className="eyebrow">Transient Scope</div>
@@ -1638,14 +1652,14 @@
 
               <aside className="bench-right">
                 {!isLearn && !inLevelMenu && (
-                  <section className="card p-5 sm:p-6">
+                  <section className="card session-card p-5 sm:p-6">
                     <div className="flex items-center justify-between mb-4"><div className="eyebrow">Session</div>{streak >= 3 && (<div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--accent)" }}>Streak · {streak}</div>)}</div>
-                    <div className="grid grid-cols-2 gap-4"><Metric label="Round" value={roundNum} /><Metric label="Streak" value={streak} sub={bestStreak > 0 ? "best " + bestStreak : null} /><Metric label="Score" value={percent(sessionCorrect, sessionTotal)} sub={sessionTotal > 0 ? sessionCorrect + " of " + sessionTotal : null} /></div>
-                    <div className="mt-5"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
+                    <div className="grid grid-cols-3 sm:grid-cols-2 gap-4"><Metric label="Round" value={roundNum} /><Metric label="Streak" value={streak} sub={bestStreak > 0 ? "best " + bestStreak : null} /><Metric label="Score" value={percent(sessionCorrect, sessionTotal)} sub={sessionTotal > 0 ? sessionCorrect + " of " + sessionTotal : null} /></div>
+                    <div className="mt-5 accuracy-block"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
                   </section>
                 )}
-                {!inLevelMenu && (<section className="card p-5 sm:p-6"><GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p></section>)}
-                {!isMobile() && !inLevelMenu && (<section className="pt-2"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
+                {!inLevelMenu && (<section className="card p-5 sm:p-6 reveal-only"><GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p></section>)}
+                {!inLevelMenu && (<section className="pt-2 kbd-hints"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
               </aside>
 
               {!inLevelMenu && (
@@ -4770,7 +4784,7 @@
                 <aside className="bench-right">
                 {/* Performance metrics — hidden in Learn (no scoring) */}
                 {!isLearnMode && (
-                <section className="card p-5 sm:p-6">
+                <section className="card session-card p-5 sm:p-6">
                   <div className="flex items-center justify-between mb-4">
                     <div className="eyebrow">Session</div>
                     {streak >= 3 && (
@@ -4779,7 +4793,7 @@
                       </div>
                     )}
                   </div>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-3 sm:grid-cols-2 gap-4">
                     <Metric label="Round" value={roundNum} />
                     <Metric label="Streak" value={streak} sub={bestStreak > 0 ? `best ${bestStreak}` : null} />
                     <Metric
@@ -4788,7 +4802,7 @@
                       sub={sessionTotal > 0 ? `${sessionCorrect} of ${sessionTotal}` : null}
                     />
                   </div>
-                  <div className="mt-5">
+                  <div className="mt-5 accuracy-block">
                     <div className="flex items-center justify-between mb-2">
                       <div className="eyebrow">Accuracy</div>
                       <div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div>
@@ -4798,16 +4812,14 @@
                 </section>
                 )}
 
-                {/* Keyboard shortcuts hint (desktop only) */}
-                {!isMobile() && (
-                  <section className="pt-2">
-                    <div className="flex flex-col gap-2 text-xs font-mono text-mute">
-                      <div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div>
-                      <div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> <kbd className="border rule px-1.5 py-0.5">C</kbd> Channel</div>
-                      <div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div>
-                    </div>
-                  </section>
-                )}
+                {/* Keyboard shortcuts hint (desktop only; CSS hides on mobile) */}
+                <section className="pt-2 kbd-hints">
+                  <div className="flex flex-col gap-2 text-xs font-mono text-mute">
+                    <div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div>
+                    <div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> <kbd className="border rule px-1.5 py-0.5">C</kbd> Channel</div>
+                    <div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div>
+                  </div>
+                </section>
                 {/* ===== /right rail ===== */}
                 </aside>
 
