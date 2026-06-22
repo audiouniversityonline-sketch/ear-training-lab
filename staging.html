@@ -677,7 +677,7 @@
 
     const MODES = {
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
-      time: { label: "Attack / Release", prompt: "", blurb: "A and B use the same compressor except for one timing setting. Decide whether B's is faster or slower than A." },
+      time: { label: "Attack / Release", prompt: "", blurb: "A and B are the same sound through the same compressor, with one timing control set differently on B. Judge how fast the compressor reacts, not the sound's own attack, then decide whether B's setting is faster or slower than A's." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one setting changed. Name the setting." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Adjust B until it matches A. Easy gives two choices, Medium gives a few steps, Hard is a free slider." },
     };
@@ -1106,9 +1106,9 @@
         { selector: '[data-tour="answer"]', title: "Make your pick", body: "Click the channel you think is compressed. You'll see if you're right, then move to the next one." },
       ];
       if (mode === "time") return [
-        { title: "How Attack and Release works", body: "A and B use the same compressor, except for one timing setting. Your job is to tell whether B's is faster or slower than A." },
-        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how quickly each one grabs the sound and lets it go." },
-        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Click faster or slower for B. You'll see if you're right, then move on." },
+        { title: "How Attack and Release works", body: "A and B are the same sound through the same compressor, with one timing control set differently on B. Judge the compressor's timing, not the sound's own attack, then decide whether B's is faster or slower than A's." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how quickly the compressor grabs the sound and lets it go, not to the sound itself." },
+        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Pick whether B's setting is faster or slower than A's. You'll see if you're right, then move on." },
       ];
       if (mode === "match") return [
         { title: "How Match works", body: "A is the target. Your job is to adjust B until it matches A." },
@@ -1253,8 +1253,8 @@
         } else if (m === "time") {
           const control = Math.random() < 0.5 ? "attack" : "release", slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
           presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
-          answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B is faster" }, { key: "slower", label: "B is slower" }];
-          prompt = "B's " + control + " compared to A?"; detail = { control, direction: answer };
+          answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's " + control + " is faster" }, { key: "slower", label: "B's " + control + " is slower" }];
+          prompt = "Is B's " + control + " time faster or slower than A's?"; detail = { control, direction: answer };
         } else {
           const pool = cfg.whatChangedPool === 2 ? ["attack", "release"] : ["attack", "release", "ratio", "threshold"];
           const param = pool[Math.floor(Math.random() * pool.length)], wc = WC_BY_DIFF[diff];
@@ -1454,7 +1454,7 @@
       };
 
       const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " was " + round.detail.direction; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " time was " + round.detail.direction; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
