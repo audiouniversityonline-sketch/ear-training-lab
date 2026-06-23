@@ -678,6 +678,7 @@
     const clampMakeup = (m) => Math.max(0.1, Math.min(4, m));
     const CAP = (s) => s.charAt(0).toUpperCase() + s.slice(1);
     const fmtMs = (s) => Math.round(s * 1000) + " ms";
+    const fmtRatio = (v) => (Number.isInteger(v) ? v : v.toFixed(1)) + ":1";
 
     const DETECT_BY_DIFF = {
       easy:   { threshold: -34, knee: 6, ratio: 8,   attack: 0.005, release: 0.14 },
@@ -688,6 +689,30 @@
       easy:   { attack: { fast: 0.003, slow: 0.12 }, release: { fast: 0.03, slow: 0.5 } },
       medium: { attack: { fast: 0.006, slow: 0.06 }, release: { fast: 0.06, slow: 0.34 } },
       hard:   { attack: { fast: 0.012, slow: 0.032 }, release: { fast: 0.1, slow: 0.28 } },
+    };
+    // Ratio comparison: both channels compressed, differing only in ratio. A lower
+    // threshold than BASE so the signal is driven well into compression and the ratio
+    // difference is clearly audible. The gap shrinks with difficulty.
+    const RATIO_BY_DIFF = {
+      easy:   { low: 2, high: 10,  threshold: -44 },
+      medium: { low: 3, high: 6,   threshold: -42 },
+      hard:   { low: 3, high: 4.5, threshold: -40 },
+    };
+    // Threshold comparison: same ratio (BASE), different threshold. The lower
+    // threshold compresses more of the signal, so it sounds harder. Gap shrinks
+    // with difficulty. Same "which is harder?" question as ratio (both = amount).
+    const THRESH_BY_DIFF = {
+      easy:   { hi: -22, lo: -46 },
+      medium: { hi: -27, lo: -40 },
+      hard:   { hi: -30, lo: -37 },
+    };
+    // Rank: three values of one control, always listed least->most (compressed) or
+    // fastest->slowest. `base` modifies the other settings so the difference is audible.
+    const RANK_SETS = {
+      ratio:     { base: { threshold: -44 }, easy: [1.5, 4, 16],        medium: [2.5, 5, 11],       hard: [3, 5, 8],             label: "least to most compressed" },
+      threshold: { base: { ratio: 6 },       easy: [-16, -33, -50],     medium: [-22, -34, -46],    hard: [-28, -34, -41],       label: "least to most compressed" },
+      attack:    { base: {},                 easy: [0.001, 0.03, 0.12], medium: [0.004, 0.02, 0.075], hard: [0.007, 0.02, 0.05], label: "fastest to slowest attack" },
+      release:   { base: {},                 easy: [0.025, 0.18, 0.55], medium: [0.05, 0.16, 0.4],  hard: [0.07, 0.16, 0.3],     label: "fastest to slowest release" },
     };
     const WC_BY_DIFF = {
       easy:   { attack: 0.003, releaseFast: 0.04, releaseSlow: 0.55, ratio: 12, threshold: -44 },
@@ -726,27 +751,33 @@
       "threshold|lower": "A lower threshold compresses more of the signal, so it sounds more even.",
     };
 
+    // Compare unifies the old Attack/Release + Ratio modes: one round picks a knob
+    // from the user's selected pool, then asks a directional question.
+    // One shared practice pool drives both Compare and Match (both now cover all
+    // four controls). The user checks which controls to practice; rounds draw from it.
+    const PRACTICE_DEFAULT = ["threshold", "ratio", "attack", "release"];
     const MODES = {
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
-      time: { label: "Attack / Release", prompt: "", blurb: "A and B are the same sound through the same compressor, with one timing control set differently on B. Judge how fast the compressor reacts, not the sound's own attack, then decide whether B's setting is faster or slower than A's." },
+      compare: { label: "Compare", prompt: "", blurb: "A and B run the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release) or how hard it squeezes (ratio). Decide which way it moved." },
+      rank: { label: "Rank", prompt: "", blurb: "Three channels, each set to a different value of one control, at matched loudness. Listen to A, B and C, then tap them in order. Builds a sense of how much, not just which way." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one setting changed. Name the setting." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Adjust B until it matches A. Easy gives two choices, Medium gives a few steps, Hard is a free slider." },
     };
-    const MODE_ORDER = ["detect", "time", "match"];   // "whatChanged" retired for now
+    const MODE_ORDER = ["detect", "compare", "rank", "match"];   // "whatChanged" retired for now
 
     // Guided curriculum. Each level fixes a mode, source, and difficulty, and passes at need/of.
     const LEVELS = [
       { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
-      { id: "c3", title: "Fast or slow", mode: "time", source: "drums", difficulty: "easy", need: 6, of: 8 },
-      { id: "c4", title: "Read the move", mode: "time", source: "drums", difficulty: "hard", need: 7, of: 10 },
+      { id: "c3", title: "Fast or slow", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c4", title: "Read the move", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
       { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
       { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
       { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c8", title: "Match: stepped", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
       { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
       { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
-      { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", matchControl: "threshold", need: 6, of: 8 },
+      { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", practicePool: ["threshold"], need: 6, of: 8 },
     ];
     const LEVELS_KEY = "au_comp_levels_v1";
     const loadPassed = () => { try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}") || {}; } catch (e) { return {}; } };
@@ -965,22 +996,54 @@
         </div>
       );
     }
-    function GrMeter({ nodeRef, active, maxGr = 18 }) {
-      const [gr, setGr] = useState(0);
-      useEffect(() => {
-        if (!active) { setGr(0); return; }
-        let raf; const tick = () => { const node = nodeRef.current; let r = 0; if (node) r = (typeof node.reduction === "number") ? node.reduction : ((node.reduction && node.reduction.value) || 0); setGr(Math.max(0, -r)); raf = requestAnimationFrame(tick); };
-        raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
-      }, [active]);
-      const segs = 14, lit = Math.round((Math.min(gr, maxGr) / maxGr) * segs);
+    // Dual A/B gain-reduction meter with peak-hold so the two channels can be
+    // compared reliably. The raw .reduction value swings violently per transient
+    // and only one channel is "monitored" at a time, so switching A<->B compared
+    // different moments. Reading BOTH compressors every frame and holding the peak
+    // (gentle decay) gives a stable, side-by-side read that matches the answer.
+    function GrBars({ a, b, c, three, active, maxGr = 18 }) {
+      const Bar = ({ label, v }) => {
+        const segs = 14, lit = Math.round((Math.min(v, maxGr) / maxGr) * segs);
+        // Gain reduction reads right-to-left: 0 dB sits at the right edge and the
+        // bar grows leftward as more reduction is applied (opposite of a level meter).
+        return (
+          <div>
+            <div className="flex items-center justify-between mb-1"><div className="font-mono text-[10px]" style={{ color: "var(--ink-2)" }}>{label}</div><div className="font-mono text-[10px] text-mute">{active ? (v > 0.1 ? ("-" + v.toFixed(1) + " dB") : "0 dB") : "—"}</div></div>
+            <div style={{ display: "flex", gap: 2 }}>
+              {Array.from({ length: segs }).map((_, i) => { const fromRight = segs - 1 - i; const on = active && fromRight < lit; const frac = fromRight / segs; const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)"; return <div key={i} style={{ flex: 1, height: 8, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />; })}
+            </div>
+          </div>
+        );
+      };
       return (
         <div>
-          <div className="flex items-center justify-between mb-2"><div className="eyebrow">Gain Reduction</div><div className="font-mono text-[10px] text-mute">{active ? (gr > 0.1 ? ("-" + gr.toFixed(1) + " dB") : "0 dB") : "—"}</div></div>
-          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-            {Array.from({ length: segs }).map((_, i) => { const on = active && i < lit; const frac = i / segs; const color = frac < 0.45 ? "var(--accent)" : frac < 0.75 ? "var(--amber)" : "var(--hot)"; return <div key={i} style={{ height: 7, background: on ? color : "var(--panel-3)", boxShadow: on ? "0 0 4px " + color : "inset 0 0 2px #000", opacity: on ? 1 : 0.5, borderRadius: 1 }} />; })}
+          <div className="eyebrow mb-3">Gain Reduction</div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+            <Bar label="A" v={a} />
+            <Bar label="B" v={b} />
+            {three && <Bar label="C" v={c} />}
           </div>
         </div>
       );
+    }
+    function GrMeter({ nodesRef, active, three, maxGr = 18 }) {
+      const [vals, setVals] = useState({ a: 0, b: 0, c: 0 });
+      const held = useRef({ a: 0, b: 0, c: 0 });
+      useEffect(() => {
+        if (!active) { held.current = { a: 0, b: 0, c: 0 }; setVals({ a: 0, b: 0, c: 0 }); return; }
+        const red = (node) => { if (!node) return 0; const r = (typeof node.reduction === "number") ? node.reduction : ((node.reduction && node.reduction.value) || 0); return Math.max(0, -r); };
+        let raf; const tick = () => {
+          const ns = nodesRef.current;
+          const ia = ns ? red(ns.compA) : 0, ib = ns ? red(ns.compB) : 0, ic = ns ? red(ns.compC) : 0;
+          held.current.a = Math.max(ia, held.current.a * 0.93);   // peak-hold, ~1s decay
+          held.current.b = Math.max(ib, held.current.b * 0.93);
+          held.current.c = Math.max(ic, held.current.c * 0.93);
+          setVals({ a: held.current.a, b: held.current.b, c: held.current.c });
+          raf = requestAnimationFrame(tick);
+        };
+        raf = requestAnimationFrame(tick); return () => cancelAnimationFrame(raf);
+      }, [active]);
+      return <GrBars a={vals.a} b={vals.b} c={vals.c} three={three} active={active} maxGr={maxGr} />;
     }
     function SettingsReadout({ preset }) {
       const rows = preset ? [["Ratio", preset.ratio + ":1"], ["Threshold", preset.threshold + " dB"], ["Attack", fmtMs(preset.attack)], ["Release", fmtMs(preset.release)]] : [["Ratio", "—"], ["Threshold", "—"], ["Attack", "—"], ["Release", "Bypassed"]];
@@ -992,6 +1055,14 @@
     }
     function Metric({ label, value, sub }) { return (<div><div className="eyebrow mb-2">{label}</div><div className="font-display font-bold italic text-3xl sm:text-4xl leading-none">{value}</div>{sub && <div className="font-mono text-xs text-mute mt-2">{sub}</div>}</div>); }
     function Seg({ options, value, onChange, disabled }) { return (<div className="seg flex-wrap">{options.map(o => (<button key={String(o.value)} className={value === o.value ? "active" : ""} onClick={() => onChange(o.value)} disabled={disabled}>{o.label}</button>))}</div>); }
+    // Multi-select toggle group: value is an array of selected keys; tapping toggles
+    // one on/off. Never goes empty (the just-tapped key stays). Used to pick which
+    // controls Compare and Match draw from, so a student can focus one or several.
+    function MultiSeg({ options, value, onChange, disabled }) {
+      const set = Array.isArray(value) ? value : [];
+      const toggle = (key) => { const has = set.includes(key); let next = has ? set.filter(k => k !== key) : [...set, key]; if (next.length === 0) next = [key]; onChange(next); };
+      return (<div className="seg flex-wrap" role="group">{options.map(o => { const on = set.includes(o.value); return (<button key={String(o.value)} className={on ? "active" : ""} aria-pressed={on} onClick={() => toggle(o.value)} disabled={disabled}>{o.label}</button>); })}</div>);
+    }
 
     function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
       return (
@@ -1156,10 +1227,15 @@
         { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. The compressed one sounds steadier and more even, with softer peaks." },
         { selector: '[data-tour="answer"]', title: "Make your pick", body: "Click the channel you think is compressed. You'll see if you're right, then move to the next one." },
       ];
-      if (mode === "time") return [
-        { title: "How Attack and Release works", body: "A and B are the same sound through the same compressor, with one timing control set differently on B. Judge the compressor's timing, not the sound's own attack, then decide whether B's is faster or slower than A's." },
-        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how quickly the compressor grabs the sound and lets it go, not to the sound itself." },
-        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Pick whether B's setting is faster or slower than A's. You'll see if you're right, then move on." },
+      if (mode === "compare") return [
+        { title: "How Compare works", body: "A and B are the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release), or how hard it squeezes (ratio)." },
+        { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how the compressor reacts and how hard it squeezes, not to the sound itself." },
+        { selector: '[data-tour="answer"]', title: "Make your pick", body: "Answer this round's question. You'll see if you're right, then move on." },
+      ];
+      if (mode === "rank") return [
+        { title: "How Rank works", body: "Three channels — A, B and C — each set to a different value of one control, at matched loudness. Your job is to put them in order." },
+        { selector: '[data-tour="listen"]', title: "Listen to all three", body: "Press play and switch between A, B and C. Compare how much each one is being compressed (or how fast it reacts)." },
+        { selector: '[data-tour="answer"]', title: "Tap them in order", body: "Tap the channels least to most (or fastest to slowest). Tapping also plays that channel. Clear to redo, then Submit." },
       ];
       if (mode === "match") return [
         { title: "How Match works", body: "A is the target. Your job is to adjust B until it matches A." },
@@ -1183,7 +1259,11 @@
       const seqRef = useRef(0);
       const learnMakeupRef = useRef(1);
       const learnTimerRef = useRef(null);
-      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, matchControl: "random" });
+      const comboPosRef = useRef({});       // combined-match (Hard/freehand): live positions per control
+      const comboIndexRef = useRef({});     // combined-match (Easy/Medium/stepped): notch index per control
+      const comboMakeupRef = useRef(1);     // combined-match: live loudness makeup for B
+      const comboTimerRef = useRef(null);   // combined-match: debounce makeup recompute
+      const configRef = useRef({ source: "drums", difficulty: "medium", whatChangedPool: 4, practicePool: [...PRACTICE_DEFAULT], matchCombine: false });
       const levelCfgRef = useRef(null);     // active level's config, overrides configRef while playing a level
       const loadedSourceRef = useRef("drums");
 
@@ -1211,6 +1291,8 @@
       const [matchPos, setMatchPos] = useState(0.5);
       const [matchIndex, setMatchIndex] = useState(0);
       const [matchResult, setMatchResult] = useState(null);
+      const [rankOrder, setRankOrder] = useState([]);   // channels tapped in order, for Rank mode
+      const [rankResult, setRankResult] = useState(null);   // { exact, close } after a rank submit
       const [matchScope, setMatchScope] = useState(null);
       const [scopeMatch, setScopeMatch] = useState(true);   // level match for the transient scope (what you see)
       const [audioMatch, setAudioMatch] = useState(true);   // level match for the audio (what you hear)
@@ -1220,6 +1302,8 @@
       const [learnPos, setLearnPos] = useState({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
       const learnPosRef = useRef({ threshold: 0.5, ratio: 0.5, attack: 0.5, release: 0.5 });
       const [learnScope, setLearnScope] = useState(null);
+      const [comboPos, setComboPos] = useState({});     // combined-match (Hard): slider positions per control
+      const [comboIndex, setComboIndex] = useState({}); // combined-match (Easy/Medium): notch index per control
 
       const [roundNum, setRoundNum] = useState(1);
       const [sessionCorrect, setSessionCorrect] = useState(0);
@@ -1234,7 +1318,8 @@
 
       const showVisuals = showAnswer || isLearn;
       const inLevelMenu = area === "levels" && (!activeLevel || !!levelResult);
-      const roles = isLearn ? { A: "Dry", B: "Yours" } : (round && round.mode === "match") ? { A: "Target", B: "Yours" } : { A: "Channel A", B: "Channel B" };
+      const roles = isLearn ? { A: "Dry", B: "Yours" } : (round && round.mode === "match") ? { A: "Target", B: "Yours" } : (round && round.mode === "rank") ? { A: "Channel A", B: "Channel B", C: "Channel C" } : { A: "Channel A", B: "Channel B" };
+      const auditionChannels = (round && round.mode === "rank") ? ["A", "B", "C"] : ["A", "B"];
       const passedCount = Object.keys(passedLevels).filter(k => LEVELS.some(l => l.id === k)).length;
       const levelUnlocked = (i) => i === 0 || !!passedLevels[LEVELS[i - 1].id];
       const levelIndex = activeLevel ? LEVELS.findIndex(l => l.id === activeLevel.id) : -1;
@@ -1255,11 +1340,13 @@
         const src = ctx.createBufferSource(); src.buffer = buffer; src.loop = true;
         const compA = ctx.createDynamicsCompressor(), makeupA = ctx.createGain(), gainA = ctx.createGain(); gainA.gain.value = 1;
         const compB = ctx.createDynamicsCompressor(), makeupB = ctx.createGain(), gainB = ctx.createGain(); gainB.gain.value = 0;
+        const compC = ctx.createDynamicsCompressor(), makeupC = ctx.createGain(), gainC = ctx.createGain(); gainC.gain.value = 0;
         const master = ctx.createGain(); master.gain.value = 0.82;
         src.connect(compA); compA.connect(makeupA); makeupA.connect(gainA); gainA.connect(master);
         src.connect(compB); compB.connect(makeupB); makeupB.connect(gainB); gainB.connect(master);
+        src.connect(compC); compC.connect(makeupC); makeupC.connect(gainC); gainC.connect(master);
         master.connect(ctx.destination); src.start(0);
-        nodesRef.current = { src, compA, makeupA, gainA, compB, makeupB, gainB, master };
+        nodesRef.current = { src, compA, makeupA, gainA, compB, makeupB, gainB, compC, makeupC, gainC, master };
         monitorRef.current = compA;
       };
       const setComp = (comp, preset, makeupNode, makeupVal) => {
@@ -1271,14 +1358,43 @@
       const switchToChannel = (ch) => {
         const ns = nodesRef.current, ctx = ctxRef.current; if (!ns || !ctx) return; const t = ctx.currentTime;
         ns.gainA.gain.setTargetAtTime(ch === "A" ? 1 : 0, t, 0.01); ns.gainB.gain.setTargetAtTime(ch === "B" ? 1 : 0, t, 0.01);
-        monitorRef.current = ch === "A" ? ns.compA : ns.compB; setListenCh(ch);
+        if (ns.gainC) ns.gainC.gain.setTargetAtTime(ch === "C" ? 1 : 0, t, 0.01);
+        monitorRef.current = ch === "C" ? ns.compC : ch === "B" ? ns.compB : ns.compA; setListenCh(ch);
       };
       const toggleAudio = async () => { const ctx = ctxRef.current; if (!ctx) return; if (ctx.state === "running") { await ctx.suspend(); setIsPlaying(false); } else { await ctx.resume(); setIsPlaying(true); } };
 
       const buildRound = async (m) => {
         const cfg = levelCfgRef.current || configRef.current, diff = cfg.difficulty, buf = srcBufRef.current, dryLoudE = dryLoudRef.current;
         if (m === "match") {
-          const control = cfg.matchControl === "random" ? ["attack", "release", "threshold", "ratio"][Math.floor(Math.random() * 4)] : cfg.matchControl;
+          const mpool = (cfg.practicePool && cfg.practicePool.length) ? cfg.practicePool : PRACTICE_DEFAULT;
+          if (cfg.matchCombine) {
+            // Combined match: target several controls at once. Follows the same
+            // difficulty ramp as single match — Easy/Medium are stepped pickers per
+            // control, Hard is a free slider per control. Loudness is matched LIVE on
+            // the combined preset (a per-control lookup can't capture the combination).
+            const controls = mpool.slice();
+            const steps = MATCH_STEPS[diff], stepped = steps >= 2;
+            const targets = {}, tol = {}, notches = {}, targetIndex = {}, startIndex = {}, startPos = {};
+            const targetPreset = { ...BASE }, startPreset = { ...BASE };
+            controls.forEach(c => {
+              if (stepped) {
+                const vals = pickNotchPositions(steps).map(p => ctrlValueAt(c, p)); notches[c] = vals;
+                const ti = Math.floor(Math.random() * steps); targetIndex[c] = ti;
+                const si = ti < steps / 2 ? steps - 1 : 0; startIndex[c] = si;
+                targets[c] = vals[ti]; targetPreset[c] = vals[ti]; startPreset[c] = vals[si];
+              } else {
+                const tp = 0.2 + Math.random() * 0.6; targets[c] = ctrlValueAt(c, tp); targetPreset[c] = targets[c];
+                const off = 0.3 + Math.random() * 0.2, dir = Math.random() < 0.5 ? -1 : 1;
+                let sp = tp + dir * off; if (sp < 0.05 || sp > 0.95) sp = tp - dir * off; sp = Math.max(0.05, Math.min(0.95, sp));
+                startPos[c] = sp; startPreset[c] = ctrlValueAt(c, sp);
+                const spec = MATCH_TOL[c], mul = DIFF_TOLMUL[diff]; tol[c] = spec.type === "lin" ? spec.base * mul : 1 + (spec.base - 1) * mul;
+              }
+            });
+            const wetT = await renderWet(buf, targetPreset); const makeupTarget = await makeupFor(wetT, dryLoudE); const envTarget = envelopeOf(wetT, ENV_POINTS, makeupTarget);
+            const wetS = await renderWet(buf, startPreset); const makeupStart = await makeupFor(wetS, dryLoudE);
+            return { mode: "match", combine: true, stepped, steps, controls, notches, targetIndex, startIndex, startPos, targets, tol, targetPreset, startPreset, makeupTarget, makeupStart, envTarget, prompt: "Match A on B — set every control." };
+          }
+          const control = mpool[Math.floor(Math.random() * mpool.length)];
           const steps = MATCH_STEPS[diff];
           if (steps >= 2) {
             const N = steps;
@@ -1301,11 +1417,43 @@
           const compIsB = Math.random() < 0.5, comp = DETECT_BY_DIFF[diff];
           presetA = compIsB ? null : comp; presetB = compIsB ? comp : null; answer = compIsB ? "B" : "A";
           options = [{ key: "A", label: "A is compressed" }, { key: "B", label: "B is compressed" }]; prompt = MODES.detect.prompt;
-        } else if (m === "time") {
-          const control = Math.random() < 0.5 ? "attack" : "release", slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
-          presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
-          answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's " + control + " is faster" }, { key: "slower", label: "B's " + control + " is slower" }];
-          prompt = "Is B's " + control + " time faster or slower than A's?"; detail = { control, direction: answer };
+        } else if (m === "compare") {
+          const pool = (cfg.practicePool && cfg.practicePool.length) ? cfg.practicePool : PRACTICE_DEFAULT;
+          const control = pool[Math.floor(Math.random() * pool.length)];
+          if (control === "ratio") {
+            const rr = RATIO_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
+            presetA = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.low : rr.high };
+            presetB = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.high : rr.low };
+            answer = harderIsB ? "B" : "A";
+            options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
+            prompt = "Which channel is compressed harder?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
+          } else if (control === "threshold") {
+            const tt = THRESH_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
+            presetA = { ...BASE, threshold: harderIsB ? tt.hi : tt.lo };
+            presetB = { ...BASE, threshold: harderIsB ? tt.lo : tt.hi };
+            answer = harderIsB ? "B" : "A";
+            options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
+            prompt = "Which channel is compressed harder?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
+          } else {
+            const slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
+            presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
+            answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's " + control + " is faster" }, { key: "slower", label: "B's " + control + " is slower" }];
+            prompt = "Is B's " + control + " time faster or slower than A's?"; detail = { control, direction: answer };
+          }
+        } else if (m === "rank") {
+          const rpool = (cfg.practicePool && cfg.practicePool.length) ? cfg.practicePool : PRACTICE_DEFAULT;
+          const control = rpool[Math.floor(Math.random() * rpool.length)];
+          const setT = RANK_SETS[control], vals = setT[diff];
+          const chans = ["A", "B", "C"];
+          const perm = [0, 1, 2]; for (let i = perm.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); const t = perm[i]; perm[i] = perm[j]; perm[j] = t; }
+          const presetMap = {}, valIndex = {};
+          chans.forEach((ch, k) => { valIndex[ch] = perm[k]; presetMap[ch] = { ...BASE, ...setT.base, [control]: vals[perm[k]] }; });
+          const order = chans.slice().sort((x, y) => valIndex[x] - valIndex[y]);   // least -> most
+          const ms = await Promise.all(chans.map(ch => measure(presetMap[ch])));
+          const makeupMap = {}, envMap = {}, grMap = {}, valueLabel = {};
+          chans.forEach((ch, k) => { makeupMap[ch] = ms[k].makeup; envMap[ch] = ms[k].env; grMap[ch] = ms[k].gr; valueLabel[ch] = CONTROLS[control].fmt(presetMap[ch][control]); });
+          const envMax = Math.max(...chans.map(ch => maxOf(envMap[ch])));
+          return { mode: "rank", control, presetMap, makeupMap, envMap, grMap, valueLabel, order, orderLabel: setT.label, envMax, prompt: "Listen to A, B and C, then tap them in order, " + setT.label + "." };
         } else {
           const pool = cfg.whatChangedPool === 2 ? ["attack", "release"] : ["attack", "release", "ratio", "threshold"];
           const param = pool[Math.floor(Math.random() * pool.length)], wc = WC_BY_DIFF[diff];
@@ -1323,19 +1471,51 @@
 
       const newRound = async (m) => {
         const useMode = m || mode, seq = ++seqRef.current;
-        setBuilding(true); setSelected(null); setShowAnswer(false); setLastCorrect(null); setMatchResult(null); setMatchScope(null);
+        setBuilding(true); setSelected(null); setShowAnswer(false); setLastCorrect(null); setMatchResult(null); setMatchScope(null); setRankOrder([]); setRankResult(null);
         const r = await buildRound(useMode);
         if (seq !== seqRef.current) return;
         setRound(r);
         const ns = nodesRef.current;
         if (r.mode === "match") {
-          if (r.stepped) { setComp(ns.compA, { ...BASE, [r.control]: r.notches[r.targetIndex] }, ns.makeupA, r.lookup[r.targetIndex].makeup); setMatchIndex(r.startIndex); setComp(ns.compB, { ...BASE, [r.control]: r.notches[r.startIndex] }, ns.makeupB, r.lookup[r.startIndex].makeup); }
+          if (r.combine) {
+            setComp(ns.compA, r.targetPreset, ns.makeupA, r.makeupTarget);
+            comboMakeupRef.current = r.makeupStart;
+            if (r.stepped) { comboIndexRef.current = { ...r.startIndex }; setComboIndex({ ...r.startIndex }); }
+            else { comboPosRef.current = { ...r.startPos }; setComboPos({ ...r.startPos }); }
+            setComp(ns.compB, r.startPreset, ns.makeupB, r.makeupStart);
+          } else if (r.stepped) { setComp(ns.compA, { ...BASE, [r.control]: r.notches[r.targetIndex] }, ns.makeupA, r.lookup[r.targetIndex].makeup); setMatchIndex(r.startIndex); setComp(ns.compB, { ...BASE, [r.control]: r.notches[r.startIndex] }, ns.makeupB, r.lookup[r.startIndex].makeup); }
           else { setComp(ns.compA, r.presetTarget, ns.makeupA, r.makeupTarget); setMatchPos(r.startPos); setComp(ns.compB, { ...BASE, [r.control]: ctrlValueAt(r.control, r.startPos) }, ns.makeupB, interpMakeup(r.lookup, r.startPos)); }
+        } else if (r.mode === "rank") {
+          setComp(ns.compA, r.presetMap.A, ns.makeupA, r.makeupMap.A);
+          setComp(ns.compB, r.presetMap.B, ns.makeupB, r.makeupMap.B);
+          setComp(ns.compC, r.presetMap.C, ns.makeupC, r.makeupMap.C);
         } else { setComp(ns.compA, r.presetA, ns.makeupA, r.makeupA); setComp(ns.compB, r.presetB, ns.makeupB, r.makeupB); }
         switchToChannel("A"); setBuilding(false);
       };
 
       const updateMatchLive = (pos) => { const ns = nodesRef.current; if (!ns || !round || round.mode !== "match" || round.stepped) return; setComp(ns.compB, { ...BASE, [round.control]: ctrlValueAt(round.control, pos) }, ns.makeupB, interpMakeup(round.lookup, pos)); };
+      // Combined match: one slider moved -> rebuild B from all controls, instant audio with
+      // the last makeup, then debounce a fresh loudness-match recompute (like Learn).
+      const renderComboMakeup = async (preset) => {
+        try { const buf = srcBufRef.current; if (!buf) return; const wet = await renderWet(buf, preset), mk = await makeupFor(wet, dryLoudRef.current); comboMakeupRef.current = mk; const ns = nodesRef.current; if (ns) setComp(ns.compB, preset, ns.makeupB, mk); } catch (e) {}
+      };
+      const comboApply = (preset) => {
+        const ns = nodesRef.current; if (ns) setComp(ns.compB, preset, ns.makeupB, comboMakeupRef.current);
+        if (listenCh !== "B") switchToChannel("B");
+        clearTimeout(comboTimerRef.current); comboTimerRef.current = setTimeout(() => renderComboMakeup(preset), 150);
+      };
+      const updateComboLive = (control, p) => {   // Hard / freehand
+        if (!round || !round.combine) return;
+        const next = { ...comboPosRef.current, [control]: p }; comboPosRef.current = next; setComboPos(next);
+        const preset = { ...BASE }; round.controls.forEach(c => { preset[c] = ctrlValueAt(c, next[c]); });
+        comboApply(preset);
+      };
+      const updateComboStep = (control, idx) => {   // Easy / Medium / stepped
+        if (!round || !round.combine || !round.stepped) return;
+        const next = { ...comboIndexRef.current, [control]: idx }; comboIndexRef.current = next; setComboIndex(next);
+        const preset = { ...BASE }; round.controls.forEach(c => { preset[c] = round.notches[c][next[c]]; });
+        comboApply(preset);
+      };
       const updateMatchStep = (index) => { const ns = nodesRef.current; if (!ns || !round || !round.stepped) return; setComp(ns.compB, { ...BASE, [round.control]: round.notches[index] }, ns.makeupB, round.lookup[index].makeup); };
 
       // Level-match toggle: re-apply the makeup gain on the live channels (compressor
@@ -1344,10 +1524,12 @@
         const ns = nodesRef.current, ctx = ctxRef.current; if (!ns || !ctx) return; const t = ctx.currentTime;
         const set = (node, m) => { const g = audioMatchRef.current ? (m || 1) : 1; try { node.gain.setValueAtTime(g, t); } catch (e) { node.gain.value = g; } };
         if (isLearn) { set(ns.makeupA, 1); set(ns.makeupB, learnMakeupRef.current); }
+        else if (round && round.mode === "match" && round.combine) { set(ns.makeupA, round.makeupTarget); set(ns.makeupB, comboMakeupRef.current); }
         else if (round && round.mode === "match") {
           set(ns.makeupA, round.stepped ? round.lookup[round.targetIndex].makeup : round.makeupTarget);
           set(ns.makeupB, round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos));
-        } else if (round) { set(ns.makeupA, round.makeupA); set(ns.makeupB, round.makeupB); }
+        } else if (round && round.mode === "rank") { set(ns.makeupA, round.makeupMap.A); set(ns.makeupB, round.makeupMap.B); set(ns.makeupC, round.makeupMap.C); }
+        else if (round) { set(ns.makeupA, round.makeupA); set(ns.makeupB, round.makeupB); }
       };
       useEffect(() => { audioMatchRef.current = audioMatch; reapplyMakeup(); }, [audioMatch]);
 
@@ -1367,12 +1549,43 @@
 
       const submitMatch = async () => {
         if (!round || round.mode !== "match" || showAnswer || building) return;
+        if (round.combine) {
+          const results = {}; let allWithin = true, allTight = true;
+          round.controls.forEach(c => {
+            let value, within, tight; const target = round.targets[c];
+            if (round.stepped) {
+              const idx = comboIndexRef.current[c]; value = round.notches[c][idx];
+              const d = Math.abs(idx - round.targetIndex[c]); within = round.steps <= 2 ? d === 0 : d <= 1; tight = d === 0;
+            } else {
+              value = ctrlValueAt(c, comboPosRef.current[c]); const spec = MATCH_TOL[c];
+              if (spec.type === "lin") { const err = Math.abs(value - target); within = err <= round.tol[c]; tight = err <= round.tol[c] * 0.5; }
+              else { const f = Math.max(value / target, target / value); within = f <= round.tol[c]; tight = f <= 1 + (round.tol[c] - 1) * 0.5; }
+            }
+            results[c] = { value, target, within, tight }; if (!within) allWithin = false; if (!tight) allTight = false;
+          });
+          setMatchResult({ combine: true, results, within: allWithin, tight: allTight }); setSelected("done"); setShowAnswer(true); setLastCorrect(allWithin);
+          recordResult(allWithin);
+          return;
+        }
         let value, target, within, tight;
         if (round.stepped) { value = round.notches[matchIndex]; target = round.notches[round.targetIndex]; const diff = Math.abs(matchIndex - round.targetIndex); within = round.steps <= 2 ? diff === 0 : diff <= 1; tight = diff === 0; }
         else { value = ctrlValueAt(round.control, matchPos); target = round.target; const spec = MATCH_TOL[round.control]; if (spec.type === "lin") { const err = Math.abs(value - target); within = err <= round.tol; tight = err <= round.tol * 0.5; } else { const f = Math.max(value / target, target / value); within = f <= round.tol; tight = f <= 1 + (round.tol - 1) * 0.5; } }
         setMatchResult({ value, target, within, tight }); setSelected("done"); setShowAnswer(true); setLastCorrect(within);
         recordResult(within);
         try { const buf = srcBufRef.current, mk = round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos); const tmk = round.stepped ? round.lookup[round.targetIndex].makeup : round.makeupTarget; const wetY = await renderWet(buf, { ...BASE, [round.control]: value }); const envY = envelopeOf(wetY, ENV_POINTS, mk); setMatchScope({ envA: round.envTarget, envB: envY, makeupA: tmk, makeupB: mk, envMax: Math.max(maxOf(round.envTarget), maxOf(envY)) }); } catch (e) {}
+      };
+
+      // Rank: tapping a channel auditions it and (if not yet placed) appends it to the order.
+      const rankTap = (ch) => { if (showAnswer || building) { switchToChannel(ch); return; } switchToChannel(ch); setRankOrder(prev => (prev.includes(ch) || prev.length >= 3) ? prev : [...prev, ch]); };
+      const submitRank = () => {
+        if (!round || round.mode !== "rank" || showAnswer || building || rankOrder.length !== 3) return;
+        // Score by how close the order is: count out-of-order pairs (inversions).
+        // 0 = spot on, 1 = one swap (close, still a pass), 2+ = not quite.
+        const correctPos = {}; round.order.forEach((ch, i) => { correctPos[ch] = i; });
+        const r = rankOrder.map(ch => correctPos[ch]);
+        let inv = 0; for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) if (r[i] > r[j]) inv++;
+        const exact = inv === 0, close = inv === 1, within = exact || close;
+        setRankResult({ exact, close }); setShowAnswer(true); setLastCorrect(within); recordResult(within);
       };
 
       const nextRound = () => {
@@ -1465,7 +1678,7 @@
           if (ctx.state !== "running") await ctx.suspend();
           loadedSourceRef.current = lv.source; setAudioSource(lv.source);
         }
-        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, matchControl: lv.matchControl || "random" };
+        levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, practicePool: lv.practicePool || lv.comparePool || lv.matchPool || (lv.matchControl ? [lv.matchControl] : PRACTICE_DEFAULT), matchCombine: !!lv.matchCombine };
         setActiveLevel(lv); setLevelAnswered(0); setLevelCorrect(0); setLevelResult(null);
         setArea("levels"); setMode(lv.mode); newRound(lv.mode);
       };
@@ -1480,15 +1693,16 @@
           if (e.key === " ") { e.preventDefault(); toggleAudio(); return; }
           if (k === "a") { switchToChannel("A"); return; }
           if (k === "b") { switchToChannel("B"); return; }
-          if (e.key === "Enter") { if (!isLearn && showAnswer) nextRound(); else if (!isLearn && round && round.mode === "match") submitMatch(); return; }
+          if (k === "c" && round && round.mode === "rank") { rankTap("C"); return; }
+          if (e.key === "Enter") { if (!isLearn && showAnswer) nextRound(); else if (!isLearn && round && round.mode === "match") submitMatch(); else if (!isLearn && round && round.mode === "rank") submitRank(); return; }
           if (!isLearn && round && !showAnswer) {
             const d = parseInt(e.key, 10);
-            if (round.mode === "match") { if (round.stepped && d >= 1 && d <= round.notches.length) { setMatchIndex(d - 1); updateMatchStep(d - 1); } }
-            else if (d >= 1 && d <= round.options.length) submitAnswer(round.options[d - 1].key);
+            if (round.mode === "match") { if (!round.combine && round.stepped && d >= 1 && d <= round.notches.length) { setMatchIndex(d - 1); updateMatchStep(d - 1); } }
+            else if (round.mode !== "rank" && round.options && d >= 1 && d <= round.options.length) submitAnswer(round.options[d - 1].key);
           }
         };
         window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-      }, [audioReady, area, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, activeLevel, levelAnswered, levelCorrect, inLevelMenu]);
+      }, [audioReady, area, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, rankOrder, activeLevel, levelAnswered, levelCorrect, inLevelMenu]);
 
       const renderOptions = () => {
         if (!round || round.mode === "match") return null;
@@ -1504,11 +1718,11 @@
         );
       };
 
-      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "time") return CUE[round.detail.control + "|" + round.detail.direction] || ""; return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "time") return "B's " + round.detail.control + " time was " + round.detail.direction; return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; if (round.detail.control === "threshold") return "Channel " + round.answer + " uses a lower threshold (" + round.detail.loThresh + " dB versus " + round.detail.hiThresh + " dB), so more of the signal is compressed. It sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio" || round.detail.control === "threshold") return "Channel " + round.answer + " is compressed harder"; return "B's " + round.detail.control + " time was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
-      const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" ? matchScope : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
+      const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" && round.combine) ? null : (round && round.mode === "match" ? matchScope : (round && round.mode === "rank") ? null : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
       // When scope level-match is off, divide the makeup back out so the scope shows the real (unmatched) levels.
       const dispEnv = (env, mk) => (scopeMatch || !mk || !env) ? env : env.map(v => v / mk);
       const scopeA = scopeSrc ? dispEnv(scopeSrc.envA, scopeSrc.makeupA) : null;
@@ -1605,7 +1819,7 @@
                 <section data-tour="listen" className="card-dark grain p-5 sm:p-6 mb-6 hidden lg:block transport-inline" style={{ position: "relative" }}>
                   <div className="relative z-10 flex flex-col sm:flex-row sm:items-center gap-5 sm:gap-6">
                     <button className="transport" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={20} /></button>
-                    <div className="flex-1 grid grid-cols-2 gap-2">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><div className="letter">{ch}</div><div className="role">{roles[ch]}</div></button>); })}</div>
+                    <div className={"flex-1 grid gap-2 " + (auditionChannels.length === 3 ? "grid-cols-3" : "grid-cols-2")}>{auditionChannels.map(ch => { const active = listenCh === ch; return (<button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><div className="letter">{ch}</div><div className="role">{roles[ch]}</div></button>); })}</div>
                   </div>
                   <div className="relative z-10 mt-4 pt-4 border-t rule flex items-center justify-between">
                     <span className="font-mono text-[10px] text-mute" style={{ textTransform: "uppercase", letterSpacing: 1 }}>What you hear</span>
@@ -1616,7 +1830,33 @@
                 <section className="mb-5"><div className="eyebrow mb-2">{isLearn ? "Learn" : "Question " + roundNum}</div><h2 className="font-display font-bold text-xl sm:text-2xl leading-tight">{isLearn ? "Adjust the compressor and listen" : (building ? "..." : (round ? round.prompt : ""))}</h2></section>
 
                 {/* Match */}
-                {!isLearn && round && round.mode === "match" && (
+                {!isLearn && round && round.mode === "match" && round.combine && !showAnswer && (
+                  <section data-tour="answer" className="card-dark p-5 mb-6">
+                    <div className="eyebrow mb-3">Your settings — match all of A</div>
+                    <div className="flex flex-col gap-5">
+                      {round.controls.map(c => {
+                        const idx = comboIndex[c] != null ? comboIndex[c] : 0, p = comboPos[c] != null ? comboPos[c] : 0.5;
+                        const shown = round.stepped ? round.notches[c][idx] : ctrlValueAt(c, p);
+                        return (
+                        <div key={c}>
+                          <div className="flex items-center justify-between mb-2"><div className="eyebrow">{CAP(c)}</div><div className="font-mono text-sm text-ink">{CONTROLS[c].fmt(shown)}</div></div>
+                          {round.stepped ? (
+                            <div className="grid gap-2" style={{ gridTemplateColumns: "repeat(" + round.notches[c].length + ", 1fr)" }}>
+                              {round.notches[c].map((v, i) => (<button key={i} className={"freq-pill " + (idx === i ? "selected" : "")} disabled={building} onClick={() => updateComboStep(c, i)}><div className="label" style={{ fontSize: 12 }}>{CONTROLS[c].fmt(v)}</div></button>))}
+                            </div>
+                          ) : (
+                            <div>
+                              <input type="range" min="0" max="1000" value={Math.round(p * 1000)} disabled={building} onChange={(e) => updateComboLive(c, (+e.target.value) / 1000)} />
+                              <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[c].fmt(CONTROLS[c].min)}</span><span>{CONTROLS[c].fmt(CONTROLS[c].max)}</span></div>
+                            </div>
+                          )}
+                        </div>); })}
+                    </div>
+                    <p className="text-xs text-mute mt-3 leading-relaxed">Switch between A (target) and B (yours). Set every control until B matches A, then check.</p>
+                    <button className="btn btn-solid w-full mt-4" onClick={submitMatch} disabled={building}>Check match</button>
+                  </section>
+                )}
+                {!isLearn && round && round.mode === "match" && !round.combine && (
                   <section data-tour="answer" className="card-dark p-5 mb-6">
                     <div className="flex items-center justify-between mb-3"><div className="eyebrow">Your {round.control}</div><div className="font-mono text-sm text-ink">{round.stepped ? CONTROLS[round.control].fmt(round.notches[matchIndex]) : CONTROLS[round.control].fmt(ctrlValueAt(round.control, matchPos))}</div></div>
                     {round.stepped ? (
@@ -1633,7 +1873,24 @@
                     {!showAnswer && <button className="btn btn-solid w-full mt-4" onClick={submitMatch} disabled={building}>Check match</button>}
                   </section>
                 )}
-                {!isLearn && round && round.mode !== "match" && <section data-tour="answer" className="mb-6">{renderOptions()}</section>}
+                {!isLearn && round && round.mode === "rank" && !showAnswer && (
+                  <section data-tour="answer" className="card-dark p-5 mb-6">
+                    <div className="flex items-center justify-between mb-3"><div className="eyebrow">Your order</div><div className="font-mono text-[10px] text-mute">{round.orderLabel}</div></div>
+                    <div className="grid grid-cols-3 gap-2">
+                      {["A", "B", "C"].map(ch => { const pos = rankOrder.indexOf(ch); const active = listenCh === ch; return (
+                        <button key={ch} className={"chan " + (active ? "active" : "")} onClick={() => rankTap(ch)} disabled={building} style={pos >= 0 ? { borderColor: "var(--accent)" } : undefined}>
+                          <div className="letter">{ch}</div>
+                          <div className="role">{pos >= 0 ? ("# " + (pos + 1)) : "tap to place"}</div>
+                        </button>); })}
+                    </div>
+                    <div className="flex gap-2 mt-4">
+                      <button className="btn btn-ghost flex-1" onClick={() => setRankOrder([])} disabled={!rankOrder.length}>Clear</button>
+                      <button className="btn btn-solid flex-1" onClick={submitRank} disabled={rankOrder.length !== 3}>Submit order</button>
+                    </div>
+                    <p className="text-xs text-mute mt-3 leading-relaxed">Listen with A / B / C above, then tap them here in order, {round.orderLabel}. Tapping a channel also plays it.</p>
+                  </section>
+                )}
+                {!isLearn && round && round.mode !== "match" && round.mode !== "rank" && <section data-tour="answer" className="mb-6">{renderOptions()}</section>}
 
                 {/* Learn free-dial — all four controls move together */}
                 {isLearn && (
@@ -1652,18 +1909,43 @@
                   </section>
                 )}
 
+                {/* Reveal — rank */}
+                {!isLearn && showAnswer && round && round.mode === "rank" && (
+                  <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
+                    <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{rankResult && rankResult.exact ? "✓ Spot on" : rankResult && rankResult.close ? "✓ Close" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{round.orderLabel}</div></div>
+                    {rankResult && rankResult.close && <p className="text-xs text-mute mb-2">One pair swapped — you had the overall order, just the two closest the other way around.</p>}
+                    <p className="text-sm text-ink-2 leading-relaxed mb-3">The correct order, {round.orderLabel}:</p>
+                    <div className="flex flex-col gap-1.5 font-mono text-xs">
+                      {round.order.map((ch, i) => (<div key={ch} className="flex items-center gap-3"><span className="text-mute" style={{ width: 18 }}>#{i + 1}</span><span className="text-ink" style={{ width: 84 }}>Channel {ch}</span><span style={{ color: "var(--accent)" }}>{round.valueLabel[ch]}</span></div>))}
+                    </div>
+                    <div className="font-mono text-[10px] text-mute mt-3">Your order: {rankOrder.join(" → ") || "—"}</div>
+                    <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
+                  </section>
+                )}
                 {/* Reveal — multiple choice */}
-                {!isLearn && showAnswer && round && round.mode !== "match" && (
+                {!isLearn && showAnswer && round && round.mode !== "match" && round.mode !== "rank" && (
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? "✓ Correct" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{revealHeadline()}</div></div>
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
                     {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
                     {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak gain reduction on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
+                    {round.mode === "compare" && round.detail.control === "ratio" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span></div>)}
+                    {round.mode === "compare" && round.detail.control === "threshold" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Threshold</span><span className="text-ink">A {round.presetA.threshold} dB</span><span className="text-ink-3">·</span><span className="text-ink">B {round.presetB.threshold} dB</span></div>)}
+                    <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
+                  </section>
+                )}
+                {/* Reveal — combined match */}
+                {!isLearn && showAnswer && round && round.mode === "match" && round.combine && matchResult && (
+                  <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
+                    <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? (matchResult.tight ? "✓ Spot on" : "✓ Close enough") : "✗ Off the mark"}</div></div>
+                    <div className="flex flex-col gap-1.5 font-mono text-xs">
+                      {round.controls.map(c => { const r = matchResult.results[c]; return (<div key={c} className="flex items-center gap-3"><span className="text-mute" style={{ width: 72 }}>{CAP(c)}</span><span style={{ color: "var(--accent)" }}>{CONTROLS[c].fmt(r.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">{CONTROLS[c].fmt(r.value)}</span><span style={{ color: r.within ? "var(--green)" : "var(--hot)" }}>{r.within ? "✓" : "✗"}</span></div>); })}
+                    </div>
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
                 )}
                 {/* Reveal — match */}
-                {!isLearn && showAnswer && round && round.mode === "match" && matchResult && (
+                {!isLearn && showAnswer && round && round.mode === "match" && !round.combine && matchResult && (
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? (matchResult.tight ? "✓ Spot on" : "✓ Close enough") : "✗ Off the mark"}</div></div>
                     <div className="flex items-center gap-4 font-mono text-xs mb-3"><span className="text-mute">{CAP(round.control)}</span><span style={{ color: "var(--accent)" }}>Target {CONTROLS[round.control].fmt(matchResult.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">Yours {CONTROLS[round.control].fmt(matchResult.value)}</span></div>
@@ -1672,6 +1954,7 @@
                   </section>
                 )}
 
+                {(!round || (round.mode !== "rank" && !round.combine)) && (
                 <section className="card p-5 reveal-only">
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-3">
@@ -1683,6 +1966,7 @@
                   {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden until you answer.</div>)}
                   {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {scopeMatch ? "Both are leveled to match, so compare their shapes, not their height." : "Level match is off, so this shows the real output level. More compression makes the signal quieter."}</p>}
                 </section>
+                )}
                 </>
                 )}
               </div>
@@ -1695,14 +1979,14 @@
                     <div className="mt-5 accuracy-block"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
                   </section>
                 )}
-                {!inLevelMenu && (<section className="card p-5 sm:p-6 reveal-only"><GrMeter nodeRef={monitorRef} active={isPlaying && showVisuals} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live on the monitored channel." : "Revealed with the answer."}</p></section>)}
+                {!inLevelMenu && (<section className="card p-5 sm:p-6 reveal-only"><GrMeter nodesRef={nodesRef} active={isPlaying && showVisuals} three={round && round.mode === "rank"} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live, side by side. The taller bar is compressed harder." : "Revealed with the answer."}</p></section>)}
                 {!inLevelMenu && (<section className="pt-2 kbd-hints"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
               </aside>
 
               {!inLevelMenu && (
                 <div data-tour="listen" className="transport-dock">
                   <button className="dock-play" onClick={toggleAudio} disabled={!audioReady} aria-label={isPlaying ? "Pause" : "Play"}><PlayGlyph playing={isPlaying} size={18} /></button>
-                  <div className="dock-chans">{["A", "B"].map(ch => { const active = listenCh === ch; return (<button key={ch} className={"dock-chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><span className="letter">{ch}</span><span className="role">{roles[ch]}</span></button>); })}</div>
+                  <div className="dock-chans">{auditionChannels.map(ch => { const active = listenCh === ch; return (<button key={ch} className={"dock-chan " + (active ? "active" : "")} onClick={() => switchToChannel(ch)} disabled={!audioReady}><span className="letter">{ch}</span><span className="role">{roles[ch]}</span></button>); })}</div>
                 </div>
               )}
             </div>
@@ -1728,7 +2012,8 @@
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
                 <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Match, Easy gives two choices, Medium gives four steps, and Hard is a free slider.</p></div>
-                <div><div className="eyebrow mb-2">Match: control</div><Seg options={[{ value: "random", label: "Random" }, { value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.matchControl} onChange={(v) => setCfg({ matchControl: v })} disabled={!audioReady} /></div>
+                <div><div className="eyebrow mb-2">Practice controls</div><MultiSeg options={[{ value: "threshold", label: "Threshold" }, { value: "ratio", label: "Ratio" }, { value: "attack", label: "Attack" }, { value: "release", label: "Release" }]} value={config.practicePool} onChange={(v) => setCfg({ practicePool: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Check any combination. Compare and Match both draw only from the controls you select.</p></div>
+                <div><div className="eyebrow mb-2">Match: combine</div><Seg options={[{ value: false, label: "One at a time" }, { value: true, label: "All at once" }]} value={config.matchCombine} onChange={(v) => setCfg({ matchCombine: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">All at once: match every checked control together (sliders, loudness held). One at a time: a single control per round.</p></div>
               </div>
             </div>
           )}
