@@ -31,6 +31,33 @@
     } catch (e) { try { document.documentElement.classList.add('embedded'); } catch (e2) {} }
   </script>
 
+  <!-- Theme (dark default / light). Applied before paint so a saved light theme
+       doesn't flash dark on load. Persisted per device; helpers used by the
+       Settings toggle live on window. -->
+  <script>
+    (function () {
+      try {
+        var KEY = 'etl:theme';
+        window.getETLTheme = function () {
+          try { var t = localStorage.getItem(KEY); return (t === 'light' || t === 'dark') ? t : 'dark'; }
+          catch (e) { return 'dark'; }
+        };
+        window.applyETLTheme = function (t) {
+          t = (t === 'light') ? 'light' : 'dark';
+          var el = document.documentElement;
+          if (t === 'light') el.setAttribute('data-theme', 'light');
+          else el.removeAttribute('data-theme');
+          try { localStorage.setItem(KEY, t); } catch (e) {}
+          try {
+            var meta = document.querySelector('meta[name="theme-color"]');
+            if (meta) meta.setAttribute('content', t === 'light' ? '#f3efe7' : '#0e0e10');
+          } catch (e) {}
+        };
+        window.applyETLTheme(window.getETLTheme());
+      } catch (e) {}
+    })();
+  </script>
+
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link
@@ -97,6 +124,38 @@
       --cool: #6aa9ff;
       --aux: #b88dff;
       --label: #d9d5cb;
+      --accent-ink: var(--accent);  /* accent used as text/icon ink (kept legible per theme) */
+      color-scheme: dark;
+    }
+
+    /* Light theme — same gold-forward identity on warm paper.
+       Toggled in Settings; applied via data-theme on <html> (see head script). */
+    html[data-theme="light"] {
+      color-scheme: light;
+      --ink: #1b1a17;      /* primary foreground (dark on light) */
+      --ink-2: #59554c;    /* secondary text */
+      --ink-3: #8b8678;    /* tertiary text */
+      --paper: #f3efe7;    /* page background (warm off-white) */
+      --panel: #ffffff;    /* cards lift off the page */
+      --panel-2: #efeae1;
+      --panel-3: #e4ded2;  /* hover / unlit meter track */
+      --rule: #e2dcd0;     /* borders / dividers */
+      --line-2: #cbc4b6;
+      --mute: #59554c;
+      --accent: #ffc93a;   /* gold stays bright for fills/CTAs */
+      --accent-dark: #a37500;
+      --accent-light: #ffe082;
+      --accent-ink: #8a5b00;  /* deep gold — bright gold text is illegible on light */
+      --hot: #d92d20;
+      --green: #15a34a;
+      --amber: #b86e0a;
+      --cool: #2563eb;
+      --aux: #7c3aed;
+      --label: #2a2823;
+    }
+    /* Dropdown chevron is baked light for the dark theme; flip it dark on light. */
+    html[data-theme="light"] select.au-select {
+      background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='none' stroke='%231b1a17' stroke-width='1.5' d='M2 4.5l4 4 4-4'/></svg>");
     }
 
     html, body {
@@ -220,7 +279,7 @@
       transition: all 120ms ease;
       cursor: pointer;
     }
-    .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
     .btn:disabled { opacity: 0.35; cursor: not-allowed; }
 
     /* Primary CTA — gold fill (the suite's active-control treatment) */
@@ -243,7 +302,7 @@
     }
     .btn-ghost:hover:not(:disabled) {
       border-color: var(--accent);
-      color: var(--accent);
+      color: var(--accent-ink);
     }
 
     /* Segmented control */
@@ -354,7 +413,7 @@
       transition: all 140ms ease;
       flex-shrink: 0;
     }
-    .transport:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); box-shadow: 0 0 12px rgba(255, 201, 58, 0.35); }
+    .transport:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 0 12px rgba(255, 201, 58, 0.35); }
     .transport:disabled { opacity: 0.35; cursor: not-allowed; }
 
     /* Progress tick bar */
@@ -580,7 +639,7 @@
       cursor: pointer;
       transition: all 140ms ease;
     }
-    .dock-play:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+    .dock-play:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
     .dock-play:disabled { opacity: 0.35; }
     .dock-chans { flex: 1; display: flex; gap: 6px; }
     .dock-chan {
@@ -944,8 +1003,30 @@
       return (
         <button onClick={onToggle} role="switch" aria-checked={on} disabled={disabled} title={title} style={{ background: "none", border: "none", cursor: disabled ? "default" : "pointer", padding: 0, display: "flex", alignItems: "center", gap: 6, opacity: disabled ? 0.5 : 1 }}>
           <span style={{ width: 28, height: 16, borderRadius: 999, background: on ? "var(--accent)" : "var(--panel-3)", border: "1px solid var(--line-2)", position: "relative", display: "inline-block", transition: "background .15s", flexShrink: 0 }}><span style={{ position: "absolute", top: 1, left: on ? 13 : 1, width: 12, height: 12, borderRadius: "50%", background: on ? "#0d0d0e" : "var(--ink-2)", transition: "left .15s" }}></span></span>
-          <span className="font-mono text-[10px]" style={{ color: on ? "var(--accent)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: 1, whiteSpace: "nowrap" }}>{label} {on ? "on" : "off"}</span>
+          <span className="font-mono text-[10px]" style={{ color: on ? "var(--accent-ink)" : "var(--ink-3)", textTransform: "uppercase", letterSpacing: 1, whiteSpace: "nowrap" }}>{label} {on ? "on" : "off"}</span>
         </button>
+      );
+    }
+    // Appearance: light/dark theme. Writes through to the head-script helpers,
+    // which flip data-theme on <html> and persist per device. Shared by both
+    // module Settings panels.
+    function ThemeControl() {
+      const [theme, setTheme] = React.useState(function () {
+        return (typeof window !== "undefined" && window.getETLTheme) ? window.getETLTheme() : "dark";
+      });
+      const choose = function (t) {
+        setTheme(t);
+        if (window.applyETLTheme) window.applyETLTheme(t);
+      };
+      return (
+        <div>
+          <div className="eyebrow mb-2">Appearance</div>
+          <div className="seg w-full" style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+            <button className={theme === "dark" ? "active" : ""} onClick={function () { choose("dark"); }}>Dark</button>
+            <button className={theme === "light" ? "active" : ""} onClick={function () { choose("light"); }}>Light</button>
+          </div>
+          <p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Switches the whole Lab between dark and light. Saved on this device.</p>
+        </div>
       );
     }
     // Free build: newsletter signup popup (shown once, after a short session).
@@ -1785,7 +1866,7 @@
                           <button key={lv.id} className="week-card" style={{ minHeight: 0, opacity: unlocked ? 1 : 0.4, cursor: unlocked ? "pointer" : "not-allowed", borderColor: passed ? "var(--accent)" : undefined }} disabled={!unlocked || !audioReady} onClick={() => unlocked && startLevel(lv)}>
                             <div className="flex items-center justify-between gap-3 w-full">
                               <div style={{ minWidth: 0 }}>
-                                <div className="num" style={passed ? { color: "var(--accent)", opacity: 1 } : {}}>Level {i + 1}{passed ? " · ✓ Passed" : unlocked ? "" : " · Locked"}</div>
+                                <div className="num" style={passed ? { color: "var(--accent-ink)", opacity: 1 } : {}}>Level {i + 1}{passed ? " · ✓ Passed" : unlocked ? "" : " · Locked"}</div>
                                 <div className="title">{lv.title}</div>
                               </div>
                               <div className="meta" style={{ marginTop: 0, textAlign: "right", flexShrink: 0 }}>{levelMeta(lv)}</div>
@@ -1916,7 +1997,7 @@
                     {rankResult && rankResult.close && <p className="text-xs text-mute mb-2">One pair swapped — you had the overall order, just the two closest the other way around.</p>}
                     <p className="text-sm text-ink-2 leading-relaxed mb-3">The correct order, {round.orderLabel}:</p>
                     <div className="flex flex-col gap-1.5 font-mono text-xs">
-                      {round.order.map((ch, i) => (<div key={ch} className="flex items-center gap-3"><span className="text-mute" style={{ width: 18 }}>#{i + 1}</span><span className="text-ink" style={{ width: 84 }}>Channel {ch}</span><span style={{ color: "var(--accent)" }}>{round.valueLabel[ch]}</span></div>))}
+                      {round.order.map((ch, i) => (<div key={ch} className="flex items-center gap-3"><span className="text-mute" style={{ width: 18 }}>#{i + 1}</span><span className="text-ink" style={{ width: 84 }}>Channel {ch}</span><span style={{ color: "var(--accent-ink)" }}>{round.valueLabel[ch]}</span></div>))}
                     </div>
                     <div className="font-mono text-[10px] text-mute mt-3">Your order: {rankOrder.join(" → ") || "—"}</div>
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
@@ -1927,7 +2008,7 @@
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? "✓ Correct" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{revealHeadline()}</div></div>
                     <p className="text-sm text-ink-2 leading-relaxed mb-4">{revealCue()}</p>
-                    {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
+                    {round.mode === "whatChanged" && (<div className="flex items-center gap-4 font-mono text-xs mb-2"><span className="text-mute">{CAP(round.detail.param)}</span><span className="text-ink">A {paramValOf(round.presetA, round.detail.param)}</span><span className="text-ink-3">→</span><span style={{ color: "var(--accent-ink)" }}>B {paramValOf(round.presetB, round.detail.param)}</span></div>)}
                     {round.mode === "detect" && (<div className="font-mono text-xs text-mute">Peak gain reduction on the compressed channel ≈ {Math.round(Math.max(round.grA, round.grB))} dB</div>)}
                     {round.mode === "compare" && round.detail.control === "ratio" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Ratio</span><span className="text-ink">A {fmtRatio(round.presetA.ratio)}</span><span className="text-ink-3">·</span><span className="text-ink">B {fmtRatio(round.presetB.ratio)}</span></div>)}
                     {round.mode === "compare" && round.detail.control === "threshold" && (<div className="flex items-center gap-3 font-mono text-xs"><span className="text-mute">Threshold</span><span className="text-ink">A {round.presetA.threshold} dB</span><span className="text-ink-3">·</span><span className="text-ink">B {round.presetB.threshold} dB</span></div>)}
@@ -1939,7 +2020,7 @@
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? (matchResult.tight ? "✓ Spot on" : "✓ Close enough") : "✗ Off the mark"}</div></div>
                     <div className="flex flex-col gap-1.5 font-mono text-xs">
-                      {round.controls.map(c => { const r = matchResult.results[c]; return (<div key={c} className="flex items-center gap-3"><span className="text-mute" style={{ width: 72 }}>{CAP(c)}</span><span style={{ color: "var(--accent)" }}>{CONTROLS[c].fmt(r.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">{CONTROLS[c].fmt(r.value)}</span><span style={{ color: r.within ? "var(--green)" : "var(--hot)" }}>{r.within ? "✓" : "✗"}</span></div>); })}
+                      {round.controls.map(c => { const r = matchResult.results[c]; return (<div key={c} className="flex items-center gap-3"><span className="text-mute" style={{ width: 72 }}>{CAP(c)}</span><span style={{ color: "var(--accent-ink)" }}>{CONTROLS[c].fmt(r.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">{CONTROLS[c].fmt(r.value)}</span><span style={{ color: r.within ? "var(--green)" : "var(--hot)" }}>{r.within ? "✓" : "✗"}</span></div>); })}
                     </div>
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
@@ -1948,7 +2029,7 @@
                 {!isLearn && showAnswer && round && round.mode === "match" && !round.combine && matchResult && (
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{lastCorrect ? (matchResult.tight ? "✓ Spot on" : "✓ Close enough") : "✗ Off the mark"}</div></div>
-                    <div className="flex items-center gap-4 font-mono text-xs mb-3"><span className="text-mute">{CAP(round.control)}</span><span style={{ color: "var(--accent)" }}>Target {CONTROLS[round.control].fmt(matchResult.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">Yours {CONTROLS[round.control].fmt(matchResult.value)}</span></div>
+                    <div className="flex items-center gap-4 font-mono text-xs mb-3"><span className="text-mute">{CAP(round.control)}</span><span style={{ color: "var(--accent-ink)" }}>Target {CONTROLS[round.control].fmt(matchResult.target)}</span><span className="text-ink-3">vs</span><span className="text-ink">Yours {CONTROLS[round.control].fmt(matchResult.value)}</span></div>
                     <p className="text-sm text-ink-2 leading-relaxed">{MATCH_TIP[round.control]}</p>
                     <button className="btn btn-solid w-full mt-4" onClick={nextRound}>{area === "levels" && activeLevel && levelAnswered >= activeLevel.of ? "See result" : "Next"}</button>
                   </section>
@@ -1961,7 +2042,7 @@
                       <div className="eyebrow">Transient Scope</div>
                       <MatchToggle on={scopeMatch} onToggle={() => setScopeMatch(v => !v)} disabled={!audioReady} label="Level match" title="Levels the two traces in the scope so you compare their shape, not their height. Turn it off to see the real output level." />
                     </div>
-                    <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent)" }}>{roles.B}</span></span></div>
+                    <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent-ink)" }}>{roles.B}</span></span></div>
                   </div>
                   {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden until you answer.</div>)}
                   {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {scopeMatch ? "Both are leveled to match, so compare their shapes, not their height." : "Level match is off, so this shows the real output level. More compression makes the signal quieter."}</p>}
@@ -1974,7 +2055,7 @@
               <aside className="bench-right">
                 {!isLearn && !inLevelMenu && (
                   <section className="card session-card p-5 sm:p-6">
-                    <div className="flex items-center justify-between mb-4"><div className="eyebrow">Session</div>{streak >= 3 && (<div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--accent)" }}>Streak · {streak}</div>)}</div>
+                    <div className="flex items-center justify-between mb-4"><div className="eyebrow">Session</div>{streak >= 3 && (<div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--accent-ink)" }}>Streak · {streak}</div>)}</div>
                     <div className="grid grid-cols-3 sm:grid-cols-2 gap-4"><Metric label="Round" value={roundNum} /><Metric label="Streak" value={streak} sub={bestStreak > 0 ? "best " + bestStreak : null} /><Metric label="Score" value={percent(sessionCorrect, sessionTotal)} sub={sessionTotal > 0 ? sessionCorrect + " of " + sessionTotal : null} /></div>
                     <div className="mt-5 accuracy-block"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
                   </section>
@@ -2003,6 +2084,7 @@
             <div className="mobile-drawer open">
               <div className="flex items-center justify-between p-5 border-b rule"><div className="eyebrow">Settings</div><button className="btn btn-ghost" onClick={() => setShowDrawer(false)} aria-label="Close"><CloseGlyph /></button></div>
               <div className="p-5 flex flex-col gap-6 overflow-y-auto">
+                <ThemeControl />
                 <p className="text-xs text-mute leading-relaxed">Custom settings are for free Practice. Changing one here leaves the current level.</p>
                 <div>
                   <div className="eyebrow mb-2">Source</div>
@@ -4809,7 +4891,7 @@
                             <div className="flex items-center justify-between mb-2">
                               <div className="eyebrow">Frequency Response</div>
                               <div className="flex items-center gap-3 font-mono text-[10px]">
-                                <span style={{ color: 'var(--accent)' }}>● Actual</span>
+                                <span style={{ color: 'var(--accent-ink)' }}>● Actual</span>
                                 {guess && <span style={{ color: 'var(--ink-3)' }}>● Your guess</span>}
                               </div>
                             </div>
@@ -5110,7 +5192,7 @@
                   <div className="flex items-center justify-between mb-4">
                     <div className="eyebrow">Session</div>
                     {streak >= 3 && (
-                      <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: 'var(--accent)' }}>
+                      <div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: 'var(--accent-ink)' }}>
                         Streak · {streak}
                       </div>
                     )}
@@ -5283,6 +5365,11 @@
 
           <div className="flex-1 overflow-y-auto">
             <div className="max-w-2xl mx-auto px-4 sm:px-6 py-6 space-y-8">
+
+              {/* Appearance (global light/dark) */}
+              <section>
+                <ThemeControl />
+              </section>
 
               {/* Curriculum shortcut */}
               <section>
