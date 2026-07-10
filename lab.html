@@ -923,7 +923,56 @@
       riff.forEach(([i, f, d, v]) => scheduleBassNote(oc, out, i * eighth, f, d * eighth, v));
       return await oc.startRendering();
     }
-    const SOURCES = { drums: { label: "Drums", render: renderDrums }, bass: { label: "Bass", render: renderBass } };
+    // ---- Real instrument sources (loudness-matched MP3 stems, loaded on demand) ----
+    // Each source keeps the same render(sampleRate) -> Promise<AudioBuffer> shape the synth
+    // sources used, so the load/prime call sites are unchanged. Buffers are cached after the
+    // first fetch, then silence-trimmed with tiny edge fades so loop=true restarts cleanly
+    // (removes codec priming and dead air regardless of the file).
+    const _sourceBufCache = {};
+    function trimForLoop(buf, ctx) {
+      const ch = buf.numberOfChannels, n = buf.length, sr = buf.sampleRate, thresh = 0.004;
+      let start = n, end = 0;
+      for (let c = 0; c < ch; c++) {
+        const d = buf.getChannelData(c);
+        for (let i = 0; i < n; i++) { if (Math.abs(d[i]) > thresh) { if (i < start) start = i; break; } }
+        for (let i = n - 1; i >= 0; i--) { if (Math.abs(d[i]) > thresh) { if (i > end) end = i; break; } }
+      }
+      if (start >= end) return buf; // all quiet -> leave as-is
+      const pad = Math.round(sr * 0.002);
+      start = Math.max(0, start - pad); end = Math.min(n - 1, end + pad);
+      const len = end - start + 1;
+      const out = ctx.createBuffer(ch, len, sr);
+      const fadeN = Math.min(Math.round(sr * 0.004), Math.floor(len / 2));
+      for (let c = 0; c < ch; c++) {
+        const src = buf.getChannelData(c), dst = out.getChannelData(c);
+        for (let i = 0; i < len; i++) dst[i] = src[start + i];
+        for (let i = 0; i < fadeN; i++) { const g = i / fadeN; dst[i] *= g; dst[len - 1 - i] *= g; }
+      }
+      return out;
+    }
+    function loadSourceFile(url) {
+      return async function (sampleRate) {
+        const key = url + "@" + sampleRate;
+        if (_sourceBufCache[key]) return _sourceBufCache[key];
+        const resp = await fetch(url);
+        if (!resp.ok) throw new Error("Could not load source audio (" + url + ")");
+        const arr = await resp.arrayBuffer();
+        const tmp = new OfflineAudioContext(1, 1, sampleRate);
+        const decoded = await tmp.decodeAudioData(arr);
+        const trimmed = trimForLoop(decoded, tmp);
+        _sourceBufCache[key] = trimmed;
+        return trimmed;
+      };
+    }
+    const SOURCES = {
+      drums:    { label: "Drums",           group: "Percussive", render: loadSourceFile("audio/drums.mp3") },
+      kick:     { label: "Kick",            group: "Percussive", render: loadSourceFile("audio/kick.mp3") },
+      snare:    { label: "Snare",           group: "Percussive", render: loadSourceFile("audio/snare.mp3") },
+      bass:     { label: "Bass",            group: "Sustained",  render: loadSourceFile("audio/bass.mp3") },
+      acoustic: { label: "Acoustic Guitar", group: "Sustained",  render: loadSourceFile("audio/acoustic-guitar.mp3") },
+      vocal:    { label: "Vocal",           group: "Sustained",  render: loadSourceFile("audio/vocal.mp3") },
+      bgvocal:  { label: "BG Vocals",       group: "Sustained",  render: loadSourceFile("audio/bg-vocals.mp3") },
+    };
     const levelMeta = (lv) => MODES[lv.mode].label + " · " + (SOURCES[lv.source] ? SOURCES[lv.source].label : lv.source) + " · " + CAP(lv.difficulty);
 
     async function renderWet(dryBuffer, preset) {
@@ -1713,7 +1762,14 @@
       const goLevels = () => { setArea("levels"); clearLevel(); setShowAnswer(false); };
 
       /* ----- config / sources ----- */
-      const switchSource = async (key) => { const ctx = ctxRef.current; if (!ctx) return; const buf = key === "custom" ? customBufRef.current : (SOURCES[key] ? await SOURCES[key].render(ctx.sampleRate) : null); if (!buf) return; await rebuildFromBuffer(buf, key); };
+      const switchSource = async (key) => {
+        const ctx = ctxRef.current; if (!ctx) return;
+        try {
+          const buf = key === "custom" ? customBufRef.current : (SOURCES[key] ? await SOURCES[key].render(ctx.sampleRate) : null);
+          if (!buf) return;
+          await rebuildFromBuffer(buf, key);
+        } catch (e) { console.error(e); setAudioError("Could not load that source."); }
+      };
       const setCfg = (patch) => {
         const next = { ...configRef.current, ...patch }; configRef.current = next; setConfig(next);
         // Changing custom settings drops you into Practice (levels are fixed exercises).
@@ -1755,9 +1811,11 @@
         const ctx = ctxRef.current; if (!ctx) return;
         if (loadedSourceRef.current !== lv.source && SOURCES[lv.source]) {
           if (nodesRef.current) { try { nodesRef.current.src.stop(); } catch (e) {} }
-          const buffer = await SOURCES[lv.source].render(ctx.sampleRate); await primeFromBuffer(buffer); buildGraph(buffer);
-          if (ctx.state !== "running") await ctx.suspend();
-          loadedSourceRef.current = lv.source; setAudioSource(lv.source);
+          try {
+            const buffer = await SOURCES[lv.source].render(ctx.sampleRate); await primeFromBuffer(buffer); buildGraph(buffer);
+            if (ctx.state !== "running") await ctx.suspend();
+            loadedSourceRef.current = lv.source; setAudioSource(lv.source);
+          } catch (e) { console.error(e); setAudioError("Could not load that source."); return; }
         }
         levelCfgRef.current = { source: lv.source, difficulty: lv.difficulty, whatChangedPool: lv.pool || 4, practicePool: lv.practicePool || lv.comparePool || lv.matchPool || (lv.matchControl ? [lv.matchControl] : PRACTICE_DEFAULT), matchCombine: !!lv.matchCombine };
         setActiveLevel(lv); setLevelAnswered(0); setLevelCorrect(0); setLevelResult(null);
@@ -2088,9 +2146,20 @@
                 <p className="text-xs text-mute leading-relaxed">Custom settings are for free Practice. Changing one here leaves the current level.</p>
                 <div>
                   <div className="eyebrow mb-2">Source</div>
-                  <p className="text-xs text-mute leading-relaxed mb-3">Transient material (drums) suits attack and release. Sustained material (bass) suits threshold and level.</p>
-                  <Seg options={[{ value: "drums", label: "Drums" }, { value: "bass", label: "Bass" }]} value={config.source === "custom" ? null : config.source} onChange={(v) => setCfg({ source: v })} disabled={!audioReady} />
-                  <label className="btn btn-ghost w-full mt-3" style={{ cursor: "pointer" }}>Upload WAV loop<input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files && e.target.files[0]) { onUploadFile(e.target.files[0]); setShowDrawer(false); } }} /></label>
+                  <p className="text-xs text-mute leading-relaxed mb-3">Percussive material (drums, kick, snare) makes attack and release easy to hear. Sustained material (bass, guitar, vocals) suits threshold and level. All are loudness matched.</p>
+                  {["Percussive", "Sustained"].map(group => (
+                    <div key={group} className="mb-3">
+                      <div className="font-mono text-[10px] uppercase tracking-wider text-ink-3 mb-1">{group}</div>
+                      <div className="grid grid-cols-2 gap-2">
+                        {Object.keys(SOURCES).filter(k => SOURCES[k].group === group).map(k => (
+                          <button key={k} type="button" className={"freq-pill" + (config.source === k ? " selected" : "")} onClick={() => setCfg({ source: k })} disabled={!audioReady}>
+                            <span className="label">{SOURCES[k].label}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  ))}
+                  <label className="btn btn-ghost w-full mt-1" style={{ cursor: "pointer" }}>Upload WAV loop<input type="file" accept="audio/*" style={{ display: "none" }} onChange={(e) => { if (e.target.files && e.target.files[0]) { onUploadFile(e.target.files[0]); setShowDrawer(false); } }} /></label>
                   {config.source === "custom" && <div className="font-mono text-[10px] text-mute mt-2">Using: {customFileName || "Custom"}</div>}
                 </div>
                 <div><div className="eyebrow mb-2">Difficulty</div><Seg options={[{ value: "easy", label: "Easy" }, { value: "medium", label: "Medium" }, { value: "hard", label: "Hard" }]} value={config.difficulty} onChange={(v) => setCfg({ difficulty: v })} disabled={!audioReady} /><p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">In Match, Easy gives two choices, Medium gives four steps, and Hard is a free slider.</p></div>
