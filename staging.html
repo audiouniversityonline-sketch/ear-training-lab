@@ -76,24 +76,28 @@
             sans: ['Geist', 'system-ui', 'sans-serif'],
             mono: ['Geist Mono', 'ui-monospace', 'monospace']
           },
+          // Point Tailwind utilities at the CSS variables so text-*/bg-*/border-*
+          // follow the light/dark theme (was hard-coded to the dark hexes, which
+          // left light-theme text at failing contrast). `rule` keeps a channel var
+          // so its /opacity modifiers (bg-rule/50 etc.) still work.
           colors: {
-            ink: '#e9e6df',
-            'ink-2': '#a5a29a',
-            'ink-3': '#6c6a64',
-            paper: '#0e0e10',
-            panel: '#1b1b1e',
-            'panel-2': '#232327',
-            'panel-3': '#2c2c31',
-            rule: '#38383e',
-            'line-2': '#4a4a52',
-            mute: '#a5a29a',
-            accent: '#ffc93a',
-            hot: '#ff4630',
-            green: '#4ade80',
-            amber: '#ffb547',
-            cool: '#6aa9ff',
-            aux: '#b88dff',
-            label: '#d9d5cb'
+            ink: 'var(--ink)',
+            'ink-2': 'var(--ink-2)',
+            'ink-3': 'var(--ink-3)',
+            paper: 'var(--paper)',
+            panel: 'var(--panel)',
+            'panel-2': 'var(--panel-2)',
+            'panel-3': 'var(--panel-3)',
+            rule: 'rgb(var(--rule-rgb) / <alpha-value>)',
+            'line-2': 'var(--line-2)',
+            mute: 'var(--mute)',
+            accent: 'var(--accent)',
+            hot: 'var(--hot)',
+            green: 'var(--green)',
+            amber: 'var(--amber)',
+            cool: 'var(--cool)',
+            aux: 'var(--aux)',
+            label: 'var(--label)'
           }
         }
       }
@@ -107,12 +111,13 @@
       /* Dark "pro-console" system — shared with the Troubleshooting Lab (see design-system.css). */
       --ink: #e9e6df;      /* primary foreground (light on dark) */
       --ink-2: #a5a29a;    /* secondary text */
-      --ink-3: #6c6a64;    /* tertiary text */
+      --ink-3: #8c8a80;    /* tertiary text — lightened to meet 4.5:1 on --paper */
       --paper: #0e0e10;    /* page background (dark) */
       --panel: #1b1b1e;
       --panel-2: #232327;
       --panel-3: #2c2c31;
       --rule: #38383e;     /* borders / dividers */
+      --rule-rgb: 56 56 62;   /* channel form of --rule for /opacity utilities */
       --line-2: #4a4a52;
       --mute: #a5a29a;     /* legacy alias -> secondary text */
       --accent: #ffc93a;   /* gold — primary accent / CTA */
@@ -134,12 +139,13 @@
       color-scheme: light;
       --ink: #1b1a17;      /* primary foreground (dark on light) */
       --ink-2: #59554c;    /* secondary text */
-      --ink-3: #8b8678;    /* tertiary text */
+      --ink-3: #6b675e;    /* tertiary text — darkened to meet 4.5:1 on light --paper */
       --paper: #f3efe7;    /* page background (warm off-white) */
       --panel: #ffffff;    /* cards lift off the page */
       --panel-2: #efeae1;
       --panel-3: #e4ded2;  /* hover / unlit meter track */
       --rule: #e2dcd0;     /* borders / dividers */
+      --rule-rgb: 226 220 208;   /* channel form of --rule for /opacity utilities */
       --line-2: #cbc4b6;
       --mute: #59554c;
       --accent: #ffc93a;   /* gold stays bright for fills/CTAs */
@@ -156,6 +162,18 @@
     /* Dropdown chevron is baked light for the dark theme; flip it dark on light. */
     html[data-theme="light"] select.au-select {
       background-image: url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'><path fill='none' stroke='%231b1a17' stroke-width='1.5' d='M2 4.5l4 4 4-4'/></svg>");
+    }
+
+    /* Respect the OS "reduce motion" setting: drop the answer flash/glow and
+       collapse transitions/animations to near-instant (WCAG 2.3.3). The flash on
+       a wrong answer especially can affect vestibular/photosensitive users. */
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after {
+        animation-duration: 0.001ms !important;
+        animation-iteration-count: 1 !important;
+        transition-duration: 0.001ms !important;
+        scroll-behavior: auto !important;
+      }
     }
 
     html, body {
@@ -1417,6 +1435,8 @@
       const [selected, setSelected] = useState(null);
       const [showAnswer, setShowAnswer] = useState(false);
       const [lastCorrect, setLastCorrect] = useState(null);
+      const [liveMsg, setLiveMsg] = useState("");   // screen-reader result announcements (aria-live)
+      const liveNonceRef = useRef(0);                // toggles trailing space so repeats re-announce
 
       const [matchPos, setMatchPos] = useState(0.5);
       const [matchIndex, setMatchIndex] = useState(0);
@@ -1665,6 +1685,8 @@
 
       const markPassed = (id) => { setPassedLevels(prev => { const next = { ...prev, [id]: true }; savePassed(next); return next; }); };
       const recordResult = (correct) => {
+        liveNonceRef.current++;
+        setLiveMsg((correct ? "Correct" : "Not quite") + (liveNonceRef.current % 2 ? " " : ""));
         setSessionTotal(t => t + 1);
         if (correct) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
         if (area === "levels" && activeLevel) { setLevelAnswered(a => a + 1); if (correct) setLevelCorrect(c => c + 1); }
@@ -1875,6 +1897,7 @@
 
       return (
         <div className="min-h-screen flex flex-col">
+          <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
           {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay onUnlock={unlock} isLoading={audioLoading} error={audioError} />}
           {showTour && <Walkthrough steps={compTourSteps(mode, isLearn)} onClose={() => setShowTour(false)} />}
 
@@ -1885,11 +1908,11 @@
                 <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div>
               </div>
               <div className="flex items-center gap-2 app-nav">
-                <div className="seg" aria-label="Module">
+                <div className="seg" role="group" aria-label="Module">
                   <button className={activeModule === "eq" ? "active" : ""} onClick={() => onSwitchModule("eq")}>EQ</button>
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
                 </div>
-                <div className="seg" aria-label="Area">
+                <div className="seg" role="group" aria-label="Area">
                   <button className={area === "practice" ? "active" : ""} onClick={goPractice} disabled={!audioReady}>Practice</button>
                   <button className={area === "learn" ? "active" : ""} onClick={enterLearn} disabled={!audioReady}>Learn</button>
                 </div>
@@ -1985,7 +2008,7 @@
                             </div>
                           ) : (
                             <div>
-                              <input type="range" min="0" max="1000" value={Math.round(p * 1000)} disabled={building} onChange={(e) => updateComboLive(c, (+e.target.value) / 1000)} />
+                              <input type="range" aria-label={"Match " + c} min="0" max="1000" value={Math.round(p * 1000)} disabled={building} onChange={(e) => updateComboLive(c, (+e.target.value) / 1000)} />
                               <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[c].fmt(CONTROLS[c].min)}</span><span>{CONTROLS[c].fmt(CONTROLS[c].max)}</span></div>
                             </div>
                           )}
@@ -2004,7 +2027,7 @@
                       </div>
                     ) : (
                       <div>
-                        <input type="range" min="0" max="1000" value={Math.round(matchPos * 1000)} disabled={showAnswer || building} onChange={(e) => { const p = (+e.target.value) / 1000; setMatchPos(p); updateMatchLive(p); }} />
+                        <input type="range" aria-label={"Match " + round.control} min="0" max="1000" value={Math.round(matchPos * 1000)} disabled={showAnswer || building} onChange={(e) => { const p = (+e.target.value) / 1000; setMatchPos(p); updateMatchLive(p); }} />
                         <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[round.control].fmt(CONTROLS[round.control].min)}</span><span>{CONTROLS[round.control].fmt(CONTROLS[round.control].max)}</span></div>
                       </div>
                     )}
@@ -2039,7 +2062,7 @@
                       {["threshold", "ratio", "attack", "release"].map(c => (
                         <div key={c}>
                           <div className="flex items-center justify-between mb-2"><div className="eyebrow">{CAP(c)}</div><div className="font-mono text-sm text-ink">{CONTROLS[c].fmt(ctrlValueAt(c, learnPos[c]))}</div></div>
-                          <input type="range" min="0" max="1000" value={Math.round(learnPos[c] * 1000)} disabled={!audioReady} onChange={(e) => updateLearnLive(c, (+e.target.value) / 1000)} />
+                          <input type="range" aria-label={"Adjust " + c} min="0" max="1000" value={Math.round(learnPos[c] * 1000)} disabled={!audioReady} onChange={(e) => updateLearnLive(c, (+e.target.value) / 1000)} />
                           <div className="flex items-center justify-between font-mono text-[10px] text-ink-3 mt-1"><span>{CONTROLS[c].fmt(CONTROLS[c].min)}</span><span>{CONTROLS[c].fmt(CONTROLS[c].max)}</span></div>
                         </div>
                       ))}
@@ -2110,7 +2133,7 @@
                 )}
               </div>
 
-              <aside className="bench-right">
+              <aside className="bench-right" tabIndex={0} aria-label="Session and meters">
                 {!isLearn && !inLevelMenu && (
                   <section className="card session-card p-5 sm:p-6">
                     <div className="flex items-center justify-between mb-4"><div className="eyebrow">Session</div>{streak >= 3 && (<div className="font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--accent-ink)" }}>Streak · {streak}</div>)}</div>
@@ -2854,6 +2877,7 @@
                 {(!draft.gainOptions || draft.gainOptions.length <= 1) && (
                   <input
                     type="range"
+                    aria-label="Filter gain in decibels"
                     min={1}
                     max={18}
                     step={1}
@@ -2912,6 +2936,7 @@
                 </div>
                 <input
                   type="range"
+                  aria-label="Number of rounds"
                   min={5}
                   max={50}
                   step={5}
@@ -3446,6 +3471,8 @@
       const [roundNum, setRoundNum] = useState(1);
       const [qInRound, setQInRound] = useState(0);
       const [roundCorrect, setRoundCorrect] = useState(0);
+      const [liveMsg, setLiveMsg] = useState("");   // screen-reader result announcements (aria-live)
+      const liveNonceRef = useRef(0);                // toggles trailing space so repeats re-announce
       const [sessionCorrect, setSessionCorrect] = useState(0);
       const [sessionTotal, setSessionTotal] = useState(0);
       const [streak, setStreak] = useState(0);
@@ -4230,6 +4257,8 @@
         const hasRound = !!(round && (round.freq || (Array.isArray(round.filters) && round.filters.length > 0)));
         if (!hasRound) return;
         const correct = isTimeout ? false : evaluateCorrectness();
+        liveNonceRef.current++;
+        setLiveMsg((isTimeout ? "Time up" : (correct ? "Correct" : "Not quite")) + (liveNonceRef.current % 2 ? " " : ""));
         const nextQ = qInRound + 1;
         setQInRound(nextQ);
         setSessionTotal(t => t + 1);
@@ -4650,6 +4679,7 @@
 
       return (
         <div className="min-h-screen flex flex-col">
+          <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
           {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} isLoading={audioLoading} error={audioError} />}
           {showNewsletter && <NewsletterModal onClose={() => setShowNewsletter(false)} />}
           {showTour && (
@@ -4689,12 +4719,12 @@
                 </div>
               </div>
               <div className="flex items-center gap-2 app-nav">
-                <div className="seg" aria-label="Module">
+                <div className="seg" role="group" aria-label="Module">
                   <button className={activeModule === "eq" ? "active" : ""} onClick={() => onSwitchModule("eq")}>EQ</button>
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
                 </div>
                 {/* Levels / Practice / Learn */}
-                <div className="seg" aria-label="Area">
+                <div className="seg" role="group" aria-label="Area">
                   <button
                     className={showCurriculum ? "active" : ""}
                     onClick={() => setShowCurriculum(true)}
@@ -5254,7 +5284,7 @@
                 </div>
 
                 {/* ===== RIGHT RAIL — performance HUD (desktop); reflows below on mobile ===== */}
-                <aside className="bench-right">
+                <aside className="bench-right" tabIndex={0} aria-label="Session and meters">
                 {/* Performance metrics — hidden in Learn (no scoring) */}
                 {!isLearnMode && (
                 <section className="card session-card p-5 sm:p-6">
@@ -5572,6 +5602,7 @@
                 </div>
                 <input
                   type="range"
+                  aria-label="Output trim in decibels"
                   min={-24}
                   max={0}
                   step={1}
@@ -5657,7 +5688,7 @@
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} />
                 <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div>
               </div>
-              <div className="seg" aria-label="Module">
+              <div className="seg" role="group" aria-label="Module">
                 <button className={activeModule === "eq" ? "active" : ""} onClick={() => onSwitchModule("eq")}>EQ</button>
                 <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
               </div>
