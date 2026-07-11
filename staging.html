@@ -843,18 +843,38 @@
     const MODE_ORDER = ["detect", "compare", "rank", "match"];   // "whatChanged" retired for now
 
     // Guided curriculum. Each level fixes a mode, source, and difficulty, and passes at need/of.
+    // Six tiers: detect -> amount (threshold/ratio) -> timing (attack/release) -> rank
+    // (calibration) -> name it blind -> reproduce (match, ending in combined capstones).
+    // Legacy ids (c1-c11) are kept wherever a level survives so saved progress
+    // (LEVELS_KEY map of passed ids) carries over; new levels use c12+.
     const LEVELS = [
+      // Tier 1 - Detection: is it compressed at all? Transient, then subtle, then sustained.
       { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
+      { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
+      // Tier 2 - Amount: threshold and ratio both answer "which is compressed harder".
+      { id: "c12", title: "Ratio: which is harder", mode: "compare", practicePool: ["ratio"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c13", title: "Threshold: which is harder", mode: "compare", practicePool: ["threshold"], source: "bass", difficulty: "medium", need: 6, of: 8 },
+      { id: "c14", title: "Amount: any knob", mode: "compare", practicePool: ["threshold", "ratio"], source: "vocal", difficulty: "hard", need: 7, of: 10 },
+      // Tier 3 - Timing: attack and release shape the envelope; transient material shows it.
       { id: "c3", title: "Fast or slow", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c15", title: "Snare: attack only", mode: "compare", practicePool: ["attack"], source: "snare", difficulty: "medium", need: 6, of: 8 },
       { id: "c4", title: "Read the move", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
+      // Tier 4 - Rank: order three settings; builds "how much", not just "which way".
+      { id: "c16", title: "Rank: ratio", mode: "rank", practicePool: ["ratio"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c17", title: "Rank: threshold", mode: "rank", practicePool: ["threshold"], source: "bass", difficulty: "medium", need: 6, of: 8 },
+      { id: "c18", title: "Rank: timing", mode: "rank", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 6, of: 10 },
+      // Tier 5 - Name it: one knob moved; say which, without seeing anything.
       { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
       { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
+      // Tier 6 - Reproduce: dial in a target by ear, across material, then combined.
       { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c8", title: "Match: stepped", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
-      { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
-      { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
       { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", practicePool: ["threshold"], need: 6, of: 8 },
+      { id: "c19", title: "Vocal: match the amount", mode: "match", source: "vocal", difficulty: "medium", practicePool: ["threshold", "ratio"], need: 6, of: 8 },
+      { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
+      { id: "c20", title: "All at once: two knobs", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio"], source: "acoustic", difficulty: "medium", need: 6, of: 8 },
+      { id: "c21", title: "The full board", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio", "attack", "release"], source: "drums", difficulty: "hard", need: 5, of: 8 },
     ];
     const LEVELS_KEY = "au_comp_levels_v1";
     const loadPassed = () => { try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}") || {}; } catch (e) { return {}; } };
@@ -1421,7 +1441,7 @@
       const [isPlaying, setIsPlaying] = useState(false);
       const [listenCh, setListenCh] = useState("A");
 
-      const [area, setArea] = useState("practice");   // practice | learn  (Levels removed from Compression)
+      const [area, setArea] = useState("levels");   // levels | practice | learn — Levels is the guided path and the landing area
       const isLearn = area === "learn";
       const [activeLevel, setActiveLevel] = useState(null);
       const [levelAnswered, setLevelAnswered] = useState(0);
@@ -1471,7 +1491,10 @@
       const roles = isLearn ? { A: "Dry", B: "Yours" } : (round && round.mode === "match") ? { A: "Target", B: "Yours" } : (round && round.mode === "rank") ? { A: "Channel A", B: "Channel B", C: "Channel C" } : { A: "Channel A", B: "Channel B" };
       const auditionChannels = (round && round.mode === "rank") ? ["A", "B", "C"] : ["A", "B"];
       const passedCount = Object.keys(passedLevels).filter(k => LEVELS.some(l => l.id === k)).length;
-      const levelUnlocked = (i) => i === 0 || !!passedLevels[LEVELS[i - 1].id];
+      // A level is unlocked by passing the one before it. A level you have already
+      // passed always stays unlocked, so inserting new levels into the sequence
+      // never re-locks progress earned under an older curriculum.
+      const levelUnlocked = (i) => i === 0 || !!passedLevels[LEVELS[i].id] || !!passedLevels[LEVELS[i - 1].id];
       const levelIndex = activeLevel ? LEVELS.findIndex(l => l.id === activeLevel.id) : -1;
 
       const measure = async (preset) => {
@@ -1913,6 +1936,7 @@
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
                 </div>
                 <div className="seg" role="group" aria-label="Area">
+                  <button className={area === "levels" ? "active" : ""} onClick={goLevels} disabled={!audioReady}>Levels</button>
                   <button className={area === "practice" ? "active" : ""} onClick={goPractice} disabled={!audioReady}>Practice</button>
                   <button className={area === "learn" ? "active" : ""} onClick={enterLearn} disabled={!audioReady}>Learn</button>
                 </div>
