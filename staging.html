@@ -5574,9 +5574,23 @@
                     Pink Noise
                   </button>
                   <button
-                    className={audioSource === 'custom' ? 'active' : ''}
+                    className={audioSource === 'custom' && activeSourceId === 'drums' ? 'active' : ''}
+                    onClick={() => onSelectLibrarySource({ id: 'drums', name: 'Drums', path: 'audio/drums.mp3' })}
+                    disabled={!audioReady || isLoadingFile}
+                  >
+                    Drums
+                  </button>
+                  <button
+                    className={audioSource === 'custom' && activeSourceId === 'vocal' ? 'active' : ''}
+                    onClick={() => onSelectLibrarySource({ id: 'vocal', name: 'Vocal', path: 'audio/vocal.mp3' })}
+                    disabled={!audioReady || isLoadingFile}
+                  >
+                    Vocal
+                  </button>
+                  <button
+                    className={audioSource === 'custom' && !activeSourceId ? 'active' : ''}
                     onClick={() => setAudioSource('custom')}
-                    disabled={!audioReady || !customFileName}
+                    disabled={!audioReady || !customFileName || !!activeSourceId}
                   >
                     Custom File
                   </button>
@@ -5618,7 +5632,7 @@
                   </div>
                 )}
                 <p className="text-xs text-mute mt-3 leading-relaxed">
-                  Pink noise is built for ear training — equal energy per octave exposes every filter move clearly. Use a custom WAV when you want to train on source material you mix.
+                  Pink noise is built for ear training. Equal energy per octave exposes every filter move clearly. Drums and Vocal are real, loudness-matched source material shared with the Compression module. Or upload your own WAV to train on a mix you know.
                 </p>
               </section>
 
