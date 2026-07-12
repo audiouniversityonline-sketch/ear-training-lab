@@ -2455,6 +2455,29 @@
     }
     function percent(n, d) { return !d ? "0%" : Math.round((n / d) * 100) + "%"; }
 
+    // Ear-training cue framework: each octave band has a memorable vowel sound
+    // (250 Hz - 4 kHz), a sibilance character (8 kHz - 16 kHz), or a felt haptic
+    // sensation (below 250 Hz). Shown under the answer buttons to build the
+    // association for beginners; hideable in Settings. Only the 9 octave bands
+    // carry a cue; third-octave frequencies show nothing.
+    const FREQ_CUES = {
+      63:    { kind: "haptic",    label: "abdomen" },
+      125:   { kind: "haptic",    label: "chest" },
+      250:   { kind: "vowel",     label: "oo" },
+      500:   { kind: "vowel",     label: "oh" },     // best-guess vowel — confirm with Kyle
+      1000:  { kind: "vowel",     label: "ah" },
+      2000:  { kind: "vowel",     label: "eh" },     // best-guess vowel — confirm with Kyle
+      4000:  { kind: "vowel",     label: "ee" },
+      8000:  { kind: "sibilance", label: "sss" },
+      16000: { kind: "sibilance", label: "sss-t" },
+    };
+    // Sounds are shown in quotes ("ah") to signal "make this sound"; haptic cues
+    // (chest / abdomen) are body locations, shown plain.
+    function cueLabel(f) {
+      const c = FREQ_CUES[f];
+      if (!c) return "";
+      return c.kind === "haptic" ? c.label : "“" + c.label + "”";
+    }
     function bandLabel(f) {
       if (f === undefined || f === null) return "??";
       if (f >= 1000) {
@@ -3477,6 +3500,9 @@
       const [eqMode, setEqMode] = useState("boost");
       const [outputTrim, setOutputTrim] = useState(-3);
       const [bandPool, setBandPool] = useState(OCTAVE_BANDS);
+      // Frequency cues on answer buttons — on by default, remembered per device.
+      const [showCues, setShowCuesState] = useState(() => STORAGE.get("showCues", true));
+      const setShowCues = (v) => { setShowCuesState(v); STORAGE.set("showCues", v); };
       const [timeLimit, setTimeLimit] = useState(0);
       const [timeRemaining, setTimeRemaining] = useState(null);
 
@@ -5128,7 +5154,7 @@
                                   style={taken ? { opacity: 0.25 } : {}}
                                   title={taken ? 'Already picked in another slot' : undefined}
                                 >
-                                  <span className="label">{bandLabel(freq)}</span>
+                                  <span className="label">{bandLabel(freq)}</span>{showCues && FREQ_CUES[freq] && <span style={{ fontSize: 11, opacity: 0.72, marginTop: 1, lineHeight: 1.1 }}>{cueLabel(freq)}</span>}
                                 </button>
                               );
                             })}
@@ -5209,7 +5235,7 @@
                             }}
                             disabled={!audioReady}
                           >
-                            <span className="label">{bandLabel(freq)}</span>
+                            <span className="label">{bandLabel(freq)}</span>{showCues && FREQ_CUES[freq] && <span style={{ fontSize: 11, opacity: 0.72, marginTop: 1, lineHeight: 1.1 }}>{cueLabel(freq)}</span>}
                             <span className="index">{i + 1}</span>
                           </button>
                         );
@@ -5414,6 +5440,8 @@
             onOpenManual={() => { setShowDrawer(false); setShowManualSetup(true); }}
             onSelectLibrarySource={loadSourceFromLibrary}
             activeSourceId={activeSourceId}
+            showCues={showCues}
+            onToggleCues={setShowCues}
             audioReady={audioReady}
             onResetProgress={() => {
               if (confirm("Clear all progress data? This can't be undone.")) {
@@ -5468,7 +5496,7 @@
       open, onClose, audioSource, setAudioSource,
       customFileName, customAudioInfo, onFileUpload, isLoadingFile,
       outputTrim, setOutputTrim, resetStats, onOpenCurriculum, onOpenManual, audioReady,
-      onResetProgress, onSelectLibrarySource, activeSourceId
+      onResetProgress, onSelectLibrarySource, activeSourceId, showCues, onToggleCues
     }) {
       const fileInputRef = useRef(null);
 
@@ -5494,6 +5522,16 @@
               {/* Appearance (global light/dark) */}
               <section>
                 <ThemeControl />
+              </section>
+
+              {/* Frequency cues on answer buttons (vowel / sibilance / haptic) */}
+              <section>
+                <div className="eyebrow mb-2">Frequency cues</div>
+                <div className="seg w-full" style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+                  <button className={showCues ? "active" : ""} onClick={() => onToggleCues(true)}>Show</button>
+                  <button className={!showCues ? "active" : ""} onClick={() => onToggleCues(false)}>Hide</button>
+                </div>
+                <p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Shows the vowel, sibilance, or haptic cue under each frequency on the answer buttons. Keep it on while you build the association; hide it once the sounds are second nature.</p>
               </section>
 
               {/* Curriculum shortcut */}
