@@ -1600,20 +1600,20 @@
             presetA = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.low : rr.high };
             presetB = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.high : rr.low };
             answer = harderIsB ? "B" : "A";
-            options = [{ key: "A", label: "A has the higher ratio" }, { key: "B", label: "B has the higher ratio" }];
-            prompt = "Which channel has the higher ratio?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
+            options = [{ key: "A", label: "Compressor A has the higher ratio" }, { key: "B", label: "Compressor B has the higher ratio" }];
+            prompt = "Which compressor has the higher ratio?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
           } else if (control === "threshold") {
             const tt = THRESH_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
             presetA = { ...BASE, threshold: harderIsB ? tt.hi : tt.lo };
             presetB = { ...BASE, threshold: harderIsB ? tt.lo : tt.hi };
             answer = harderIsB ? "B" : "A";
-            options = [{ key: "A", label: "A has the lower threshold" }, { key: "B", label: "B has the lower threshold" }];
-            prompt = "Which channel has the lower threshold?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
+            options = [{ key: "A", label: "Compressor A has the lower threshold" }, { key: "B", label: "Compressor B has the lower threshold" }];
+            prompt = "Which compressor has the lower threshold?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
           } else {
             const slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
             presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
-            answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's compressor " + control + " is faster" }, { key: "slower", label: "B's compressor " + control + " is slower" }];
-            prompt = "Is the compressor's " + control + " faster or slower on B than on A?"; detail = { control, direction: answer };
+            answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "Compressor B's " + control + " is faster" }, { key: "slower", label: "Compressor B's " + control + " is slower" }];
+            prompt = "Is Compressor B's " + control + " faster or slower than Compressor A's?"; detail = { control, direction: answer };
           }
         } else if (m === "rank") {
           const rpool = (cfg.practicePool && cfg.practicePool.length) ? cfg.practicePool : PRACTICE_DEFAULT;
@@ -1904,8 +1904,8 @@
         );
       };
 
-      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; if (round.detail.control === "threshold") return "Channel " + round.answer + " uses a lower threshold (" + round.detail.loThresh + " dB versus " + round.detail.hiThresh + " dB), so more of the signal is compressed. It sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " has the higher ratio"; if (round.detail.control === "threshold") return "Channel " + round.answer + " has the lower threshold"; return "B's compressor " + round.detail.control + " was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Compressor " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; if (round.detail.control === "threshold") return "Compressor " + round.answer + " uses a lower threshold (" + round.detail.loThresh + " dB versus " + round.detail.hiThresh + " dB), so more of the signal is compressed. It sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Compressor " + round.answer + " has the higher ratio"; if (round.detail.control === "threshold") return "Compressor " + round.answer + " has the lower threshold"; return "Compressor B's " + round.detail.control + " was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" && round.combine) ? null : (round && round.mode === "match" ? matchScope : (round && round.mode === "rank") ? null : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
