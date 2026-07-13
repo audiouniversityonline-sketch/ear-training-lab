@@ -4504,6 +4504,19 @@
       // Set-match: every guess filter must correspond (in any order) to a unique actual
       // filter on (freq, direction, gainDb). For RTF, the user's answer direction must be
       // the inverse of the question direction.
+      // Slots whose direction/gain pickers were hidden carry nulls — fill in the
+      // single possible value before grading (same rule as the slot writer). A
+      // null that had a real choice (direction in "both" mode, gain with multiple
+      // options) stays null and correctly grades wrong.
+      const normalizeSlotGuesses = (guesses, isRTF) => (guesses || []).map(g => ({
+        ...g,
+        direction: g.direction != null ? g.direction
+          : (eqMode !== "both" ? (isRTF ? (eqMode === "boost" ? "cut" : "boost") : eqMode) : null),
+        gainDb: g.gainDb != null ? g.gainDb
+          : ((gainOptions && gainOptions.length === 1) ? gainOptions[0]
+            : ((!gainOptions || gainOptions.length === 0) ? gainDb : null))
+      }));
+
       const evaluateMultiFilter = (guesses, actuals, isRTF) => {
         if (!Array.isArray(guesses) || !Array.isArray(actuals)) return false;
         if (guesses.length !== actuals.length) return false;
@@ -4532,7 +4545,7 @@
           const isRTF = isReturnToFlatMode(mode);
           // For Identify the user picks via guessFilters; for Matching/RTF via answerFilters.
           const guesses = mode === "Identify" ? guessFilters : answerFilters;
-          return evaluateMultiFilter(guesses, round.filters, isRTF);
+          return evaluateMultiFilter(normalizeSlotGuesses(guesses, isRTF), round.filters, isRTF);
         }
 
         // Single-filter rounds — existing logic.
@@ -5018,6 +5031,8 @@
 
       /* ---------- Derived values for rendering ---------- */
       const currentTask = getCurrentTask();
+      // Preview-only debug handle for testing gated content (inert in production).
+      if (PREVIEW_UNLOCK && typeof window !== "undefined") { window.__eqDebug = { round, answerFilters, guessFilters, mode, eqMode, gainDb, filterCount }; }
       const weekPlan = getWeekPlan(curriculumWeek);
       const nextTaskExists = getNextTask() !== null;
       const isCorrect = showAnswer && evaluateCorrectness();
@@ -5288,7 +5303,7 @@
                             {round.filters.map((af, i) => {
                               const isRTF = isReturnToFlatMode(mode);
                               const expectedDir = isRTF ? (af.direction === "boost" ? "cut" : "boost") : af.direction;
-                              const guesses = mode === "Identify" ? guessFilters : answerFilters;
+                              const guesses = normalizeSlotGuesses(mode === "Identify" ? guessFilters : answerFilters, isRTF);
                               // Find the user's pick that matches this actual filter
                               const matchedGuess = (guesses || []).find(g =>
                                 g.freq === af.freq && g.gainDb === af.gainDb && g.direction === expectedDir
@@ -5428,18 +5443,28 @@
                       const slots = isIdentify ? guessFilters : answerFilters;
                       const setSlots = isIdentify ? setGuessFilters : setAnswerFilters;
                       const slot = slots && slots[slotIdx] ? slots[slotIdx] : { freq: null, direction: null, gainDb: null };
-                      const updateSlot = (patch) => {
-                        if (!slots) return;
-                        const next = slots.map((s, i) => i === slotIdx ? { ...s, ...patch } : s);
-                        setSlots(next);
-                        if (!isIdentify) setAnswerTouched(true);
-                      };
                       // Other slots' picked freqs are unavailable (must be distinct)
                       const otherFreqs = slots
                         ? slots.map((s, i) => i !== slotIdx ? s.freq : null).filter(f => f != null)
                         : [];
                       const showDirection = (gainOptions && gainOptions.length > 0) || eqMode === "both";
                       const showGain = gainOptions && gainOptions.length > 1;
+                      const updateSlot = (patch) => {
+                        if (!slots) return;
+                        const fill = { ...patch };
+                        // When a picker is hidden there is exactly one possible value —
+                        // fill it in, or the slot submits nulls and can never grade
+                        // correct (the "multi-band always wrong" bug).
+                        if (!showDirection && fill.direction == null) {
+                          fill.direction = isReturnToFlatMode(mode) ? (eqMode === "boost" ? "cut" : "boost") : eqMode;
+                        }
+                        if (!showGain && fill.gainDb == null) {
+                          fill.gainDb = (gainOptions && gainOptions.length === 1) ? gainOptions[0] : gainDb;
+                        }
+                        const next = slots.map((s, i) => i === slotIdx ? { ...s, ...fill } : s);
+                        setSlots(next);
+                        if (!isIdentify) setAnswerTouched(true);
+                      };
                       return (
                         <div key={slotIdx} className="card p-4 sm:p-5" style={{ borderColor: 'var(--rule)' }}>
                           <div className="flex items-baseline justify-between mb-3">
