@@ -789,8 +789,8 @@
     const RANK_SETS = {
       ratio:     { base: { threshold: -44 }, easy: [1.5, 4, 16],        medium: [2.5, 5, 11],       hard: [3, 5, 8],             label: "lowest to highest ratio" },
       threshold: { base: { ratio: 6 },       easy: [-16, -33, -50],     medium: [-22, -34, -46],    hard: [-28, -34, -41],       label: "highest to lowest threshold" },
-      attack:    { base: {},                 easy: [0.001, 0.03, 0.12], medium: [0.004, 0.02, 0.075], hard: [0.007, 0.02, 0.05], label: "fastest to slowest attack" },
-      release:   { base: {},                 easy: [0.025, 0.18, 0.55], medium: [0.05, 0.16, 0.4],  hard: [0.07, 0.16, 0.3],     label: "fastest to slowest release" },
+      attack:    { base: {},                 easy: [0.001, 0.03, 0.12], medium: [0.004, 0.02, 0.075], hard: [0.007, 0.02, 0.05], label: "fastest to slowest compressor attack" },
+      release:   { base: {},                 easy: [0.025, 0.18, 0.55], medium: [0.05, 0.16, 0.4],  hard: [0.07, 0.16, 0.3],     label: "fastest to slowest compressor release" },
     };
     const WC_BY_DIFF = {
       easy:   { attack: 0.003, releaseFast: 0.04, releaseSlow: 0.55, ratio: 12, threshold: -44 },
@@ -836,7 +836,7 @@
     const PRACTICE_DEFAULT = ["threshold", "ratio", "attack", "release"];
     const MODES = {
       detect: { label: "Detect", prompt: "Which channel is compressed?", blurb: "One channel is uncompressed and one is compressed. Both are set to the same loudness, so you can't tell them apart by volume. Pick the compressed one." },
-      compare: { label: "Compare", prompt: "", blurb: "A and B run the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release) or how hard it squeezes (ratio). Decide which way it moved." },
+      compare: { label: "Compare", prompt: "", blurb: "A and B run the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast the compressor reacts (attack or release) or how hard it squeezes (ratio or threshold). Attack and release mean the compressor's timing, not the attack of the sound itself. Decide which way it moved." },
       rank: { label: "Rank", prompt: "", blurb: "Three channels, each set to a different value of one control, at matched loudness. Listen to A, B and C, then tap them in order. Builds a sense of how much, not just which way." },
       whatChanged: { label: "What changed?", prompt: "Which parameter is different on B?", blurb: "A and B are the same compressor with one setting changed. Name the setting." },
       match: { label: "Match", prompt: "", blurb: "A is the target. Adjust B until it matches A. Easy gives two choices, Medium gives a few steps, Hard is a free slider." },
@@ -850,33 +850,33 @@
     // (LEVELS_KEY map of passed ids) carries over; new levels use c12+.
     const LEVELS = [
       // Tier 1 - Detection: is it compressed at all? Transient, then subtle, then sustained.
-      { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
-      { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
-      { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
+      { id: "c1", title: "Is it compressed?", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c2", title: "Subtle compression", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
+      { id: "c10", title: "Compression on bass", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
       // Tier 2 - Amount: the two "how much" controls, asked in native terms
       // (higher ratio / lower threshold), then mixed.
       { id: "c12", title: "Ratio: high or low", mode: "compare", practicePool: ["ratio"], source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c13", title: "Threshold: high or low", mode: "compare", practicePool: ["threshold"], source: "bass", difficulty: "medium", need: 6, of: 8 },
-      { id: "c14", title: "Amount: either control", mode: "compare", practicePool: ["threshold", "ratio"], source: "vocal", difficulty: "hard", need: 7, of: 10 },
-      // Tier 3 - Timing: attack and release shape the envelope; transient material shows it.
-      { id: "c3", title: "Fast or slow", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
-      { id: "c15", title: "Snare: attack only", mode: "compare", practicePool: ["attack"], source: "snare", difficulty: "medium", need: 6, of: 8 },
-      { id: "c4", title: "Read the move", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
+      { id: "c14", title: "Ratio or threshold", mode: "compare", practicePool: ["threshold", "ratio"], source: "vocal", difficulty: "hard", need: 7, of: 10 },
+      // Tier 3 - Timing: the compressor's attack and release. Transient material shows it.
+      { id: "c3", title: "Attack and release", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c15", title: "Attack on snare", mode: "compare", practicePool: ["attack"], source: "snare", difficulty: "medium", need: 6, of: 8 },
+      { id: "c4", title: "Attack and release: subtle", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
       // Tier 4 - Rank: order three settings; builds "how much", not just "which way".
       { id: "c16", title: "Rank: ratio", mode: "rank", practicePool: ["ratio"], source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c17", title: "Rank: threshold", mode: "rank", practicePool: ["threshold"], source: "bass", difficulty: "medium", need: 6, of: 8 },
-      { id: "c18", title: "Rank: timing", mode: "rank", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 6, of: 10 },
-      // Tier 5 - Name it: one knob moved; say which, without seeing anything.
-      { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
-      { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
+      { id: "c18", title: "Rank: attack and release", mode: "rank", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 6, of: 10 },
+      // Tier 5 - Name it: one setting moved; say which, without seeing anything.
+      { id: "c5", title: "Name the setting", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
+      { id: "c6", title: "Name any setting", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
       // Tier 6 - Reproduce: dial in a target by ear, across material, then combined.
-      { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
-      { id: "c8", title: "Match: stepped", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
+      { id: "c7", title: "Match: two choices", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c8", title: "Match: four steps", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
       { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", practicePool: ["threshold"], need: 6, of: 8 },
-      { id: "c19", title: "Vocal: match the amount", mode: "match", source: "vocal", difficulty: "medium", practicePool: ["threshold", "ratio"], need: 6, of: 8 },
-      { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
-      { id: "c20", title: "All at once: two knobs", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio"], source: "acoustic", difficulty: "medium", need: 6, of: 8 },
-      { id: "c21", title: "The full board", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio", "attack", "release"], source: "drums", difficulty: "hard", need: 5, of: 8 },
+      { id: "c19", title: "Vocal: match ratio and threshold", mode: "match", source: "vocal", difficulty: "medium", practicePool: ["threshold", "ratio"], need: 6, of: 8 },
+      { id: "c9", title: "Match: free slider", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
+      { id: "c20", title: "Match two settings at once", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio"], source: "acoustic", difficulty: "medium", need: 6, of: 8 },
+      { id: "c21", title: "Match all four settings", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio", "attack", "release"], source: "drums", difficulty: "hard", need: 5, of: 8 },
     ];
     const LEVELS_KEY = "au_comp_levels_v1";
     const loadPassed = () => { try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}") || {}; } catch (e) { return {}; } };
@@ -1398,7 +1398,7 @@
         { selector: '[data-tour="answer"]', title: "Make your pick", body: "Click the channel you think is compressed. You'll see if you're right, then move to the next one." },
       ];
       if (mode === "compare") return [
-        { title: "How Compare works", body: "A and B are the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast it reacts (attack or release), or how hard it squeezes (ratio)." },
+        { title: "How Compare works", body: "A and B are the same sound through the same compressor at matched loudness, with one setting different on B. Each round asks about that setting: how fast the compressor reacts (attack or release), or how hard it squeezes (ratio or threshold). Attack and release are the compressor's timing, not the sound's own attack." },
         { selector: '[data-tour="listen"]', title: "Listen and compare", body: "Press play and switch between A and B. Listen to how the compressor reacts and how hard it squeezes, not to the sound itself." },
         { selector: '[data-tour="answer"]', title: "Make your pick", body: "Answer this round's question. You'll see if you're right, then move on." },
       ];
@@ -1600,20 +1600,20 @@
             presetA = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.low : rr.high };
             presetB = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.high : rr.low };
             answer = harderIsB ? "B" : "A";
-            options = [{ key: "A", label: "A has the higher ratio" }, { key: "B", label: "B has the higher ratio" }];
-            prompt = "Which channel has the higher ratio?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
+            options = [{ key: "A", label: "Compressor A has the higher ratio" }, { key: "B", label: "Compressor B has the higher ratio" }];
+            prompt = "Which compressor has the higher ratio?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
           } else if (control === "threshold") {
             const tt = THRESH_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
             presetA = { ...BASE, threshold: harderIsB ? tt.hi : tt.lo };
             presetB = { ...BASE, threshold: harderIsB ? tt.lo : tt.hi };
             answer = harderIsB ? "B" : "A";
-            options = [{ key: "A", label: "A has the lower threshold" }, { key: "B", label: "B has the lower threshold" }];
-            prompt = "Which channel has the lower threshold?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
+            options = [{ key: "A", label: "Compressor A has the lower threshold" }, { key: "B", label: "Compressor B has the lower threshold" }];
+            prompt = "Which compressor has the lower threshold?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
           } else {
             const slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
             presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
-            answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "B's " + control + " is faster" }, { key: "slower", label: "B's " + control + " is slower" }];
-            prompt = "Is B's " + control + " time faster or slower than A's?"; detail = { control, direction: answer };
+            answer = slower ? "slower" : "faster"; options = [{ key: "faster", label: "Compressor B's " + control + " is faster" }, { key: "slower", label: "Compressor B's " + control + " is slower" }];
+            prompt = "Is Compressor B's " + control + " faster or slower than Compressor A's?"; detail = { control, direction: answer };
           }
         } else if (m === "rank") {
           const rpool = (cfg.practicePool && cfg.practicePool.length) ? cfg.practicePool : PRACTICE_DEFAULT;
@@ -1904,8 +1904,8 @@
         );
       };
 
-      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; if (round.detail.control === "threshold") return "Channel " + round.answer + " uses a lower threshold (" + round.detail.loThresh + " dB versus " + round.detail.hiThresh + " dB), so more of the signal is compressed. It sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " has the higher ratio"; if (round.detail.control === "threshold") return "Channel " + round.answer + " has the lower threshold"; return "B's " + round.detail.control + " time was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Compressor " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; if (round.detail.control === "threshold") return "Compressor " + round.answer + " uses a lower threshold (" + round.detail.loThresh + " dB versus " + round.detail.hiThresh + " dB), so more of the signal is compressed. It sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Compressor " + round.answer + " has the higher ratio"; if (round.detail.control === "threshold") return "Compressor " + round.answer + " has the lower threshold"; return "Compressor B's " + round.detail.control + " was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" && round.combine) ? null : (round && round.mode === "match" ? matchScope : (round && round.mode === "rank") ? null : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
