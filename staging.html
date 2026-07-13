@@ -3622,7 +3622,7 @@
 
       /* Per-week progress persisted to localStorage: { [weekNum]: { [taskIdx]: accuracy } } */
       const [progress, setProgress] = useState(() => migrateProgress(STORAGE.get("earTrainingProgress", {})));
-      const [currentLevelId, setCurrentLevelId] = useState(() => CURRICULUM.levels?.[0]?.id ?? 1);
+      const [currentLevelId, setCurrentLevelId] = useState(() => STORAGE.get("currentLevelId", null) ?? (CURRICULUM.levels?.[0]?.id ?? 1));
 
       /* Mobile settings drawer */
       const [showDrawer, setShowDrawer] = useState(false);
@@ -3655,7 +3655,14 @@
         setListenCh(channel);
       };
 
-      const getWeekPlan = (n) => CURRICULUM.weeks.find(w => w.week === n);
+      // Week lookup must respect the selected level — CURRICULUM.weeks is a legacy
+      // alias for level 1 only, and using it here made every level play level 1's
+      // tasks (the "Advanced week 1 was all peaks" bug).
+      const getWeekPlan = (n) => {
+        const lv = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+        const weeks = (lv && lv.weeks) || CURRICULUM.weeks || [];
+        return weeks.find(w => w.week === n);
+      };
       const getCurrentTask = () => {
         const wp = getWeekPlan(curriculumWeek);
         return wp ? wp.tasks[curriculumTaskIndex] : null;
@@ -4688,8 +4695,12 @@
         setTimeout(() => newRound(), 50);
       }, [mode]);
 
-      // When week/task changes OR audio just became ready, load the current task
+      // When level/week/task changes OR audio just became ready, load the current task.
+      // currentLevelId MUST be a dependency: switching level while staying on the same
+      // week/task number otherwise kept the previous level's task spec loaded (the
+      // "Advanced W1-T1 played level 1's all-boosts task" bug).
       useEffect(() => {
+        STORAGE.set("currentLevelId", currentLevelId);
         STORAGE.set("curriculumWeek", curriculumWeek);
         STORAGE.set("curriculumTaskIndex", curriculumTaskIndex);
         if (!audioReady) return;
@@ -4701,7 +4712,7 @@
           modeChangeSourceRef.current = 'internal';
           applyTaskSpec(task);
         }
-      }, [curriculumWeek, curriculumTaskIndex, audioReady]);
+      }, [currentLevelId, curriculumWeek, curriculumTaskIndex, audioReady]);
 
       // Keyboard shortcuts state
       const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
@@ -5045,6 +5056,25 @@
                       {hasLeftChannelA
                         ? "A is locked. Work from memory — apply the opposite EQ on C to cancel what you heard on B."
                         : "Listen to A carefully. Once you leave A, you can't return."}
+                    </div>
+                  </section>
+                )}
+
+                {/* Session context — which level/task this is and what to listen for.
+                    Members asked for this: without it you can't tell mid-practice whether
+                    the exercise is peaks, dips, or both. Shown for curriculum and manual
+                    sessions alike; center stage so mobile gets it too. */}
+                {round && !isLearnMode && (
+                  <section className="mb-4">
+                    <div className="font-mono text-[10px] uppercase tracking-wider text-mute">
+                      {!isManualSession && currentTask
+                        ? ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " — " + currentTask.name : "")
+                        : "Custom Practice"}
+                    </div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: "var(--accent-ink)" }}>
+                      {"Listen for: " + (eqMode === "both" ? "peaks and dips" : eqMode === "cut" ? "dips (cuts)" : "peaks (boosts)")
+                        + " · " + ((gainOptions && gainOptions.length > 1) ? gainOptions.map(g => g + " dB").join(" or ") : gainDb + " dB")
+                        + (filterCount > 1 ? " · " + filterCount + " bands at once" : "")}
                     </div>
                   </section>
                 )}
