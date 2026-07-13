@@ -2481,7 +2481,10 @@
 
     async function loadCurriculum() {
       try {
-        const res = await fetch('curriculum.json', { cache: 'no-store' });
+        // STAGING: reads curriculum-v2.json (adds Level 2) so production's curriculum.json
+        // stays untouched until the Level 2 unlock gating ships. AT PROMOTE TIME: copy
+        // curriculum-v2.json over curriculum.json and point this fetch back at curriculum.json.
+        const res = await fetch('curriculum-v2.json', { cache: 'no-store' });
         if (!res.ok) throw new Error('Curriculum fetch failed: ' + res.status);
         const data = await res.json();
         CURRICULUM = normalizeCurriculum(data);
