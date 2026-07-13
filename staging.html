@@ -2818,6 +2818,78 @@
       return progress?.levels?.[levelId] || {};
     }
 
+    /*
+     * Drip unlocks — levels that carry an `unlock` rule in the curriculum
+     * (e.g. Level 2: { completionsPerWeek: 3, minDaysBetweenWeeks: 7 }) release
+     * their weeks progressively, mimicking the original course cadence:
+     * the next week opens only after every task in the current week has been
+     * RUN the required number of times AND at least minDaysBetweenWeeks have
+     * passed since the current week unlocked. Levels without a rule (Foundations)
+     * stay fully open. Unlock timestamps persist per device in STORAGE.
+     */
+    const WEEK_UNLOCKS_KEY = "eqWeekUnlocks";   // { [levelId]: { [weekNum]: epochMs } }
+
+    // Runs completed for a week = the minimum run count across its tasks.
+    // Entries written before run-counting existed count as one run if completed.
+    function weekRunsDone(levelProgress, weekPlan) {
+      if (!weekPlan || !weekPlan.tasks || weekPlan.tasks.length === 0) return 0;
+      return Math.min(...weekPlan.tasks.map((_, i) => {
+        const e = readProgress(levelProgress[weekPlan.week]?.[i]);
+        if (!e) return 0;
+        if (typeof e.count === 'number') return e.count;
+        return e.completed ? 1 : 0;
+      }));
+    }
+
+    // Pure read: unlock status for every week of a level.
+    function weekUnlockStatus(level, levelProgress) {
+      const out = {};
+      const weeks = (level && level.weeks) || [];
+      const rule = level && level.unlock;
+      if (!rule) { weeks.forEach(w => { out[w.week] = { unlocked: true }; }); return out; }
+      const stamps = (STORAGE.get(WEEK_UNLOCKS_KEY, {}) || {})[level.id] || {};
+      const need = rule.completionsPerWeek || 3;
+      const gapMs = (rule.minDaysBetweenWeeks || 7) * 86400000;
+      weeks.forEach((w, idx) => {
+        if (idx === 0 || stamps[w.week]) { out[w.week] = { unlocked: true }; return; }
+        const prev = weeks[idx - 1];
+        const runs = weekRunsDone(levelProgress, prev);
+        const runsLeft = Math.max(0, need - runs);
+        const prevStamp = stamps[prev.week];
+        const msLeft = prevStamp ? Math.max(0, prevStamp + gapMs - Date.now()) : gapMs;
+        const daysLeft = Math.max(1, Math.ceil(msLeft / 86400000));
+        const reason = runsLeft > 0
+          ? "Run each Level " + prev.week + " task " + need + " times. " + runs + " of " + need + " full runs so far."
+          : (msLeft > 0 ? "Opens " + daysLeft + (daysLeft === 1 ? " day" : " days") + " after Level " + prev.week + " unlocked." : "Opens on your next visit.");
+        out[w.week] = { unlocked: false, reason, runsLeft, msLeft };
+      });
+      return out;
+    }
+
+    // Stamp any weeks that just became eligible. Monotonic: stamps only get added.
+    // Returns true if something new unlocked (callers re-render on that).
+    function settleWeekUnlocks(level, levelProgress) {
+      const rule = level && level.unlock;
+      if (!rule) return false;
+      const all = STORAGE.get(WEEK_UNLOCKS_KEY, {}) || {};
+      const stamps = { ...(all[level.id] || {}) };
+      const weeks = level.weeks || [];
+      const need = rule.completionsPerWeek || 3;
+      const gapMs = (rule.minDaysBetweenWeeks || 7) * 86400000;
+      let changed = false;
+      weeks.forEach((w, idx) => {
+        if (idx === 0) { if (!stamps[w.week]) { stamps[w.week] = Date.now(); changed = true; } return; }
+        if (stamps[w.week]) return;
+        const prev = weeks[idx - 1];
+        const ps = stamps[prev.week];
+        if (ps && (Date.now() - ps) >= gapMs && weekRunsDone(levelProgress, prev) >= need) {
+          stamps[w.week] = Date.now(); changed = true;
+        }
+      });
+      if (changed) STORAGE.set(WEEK_UNLOCKS_KEY, { ...all, [level.id]: stamps });
+      return changed;
+    }
+
     function KeyboardHelpOverlay({ onClose }) {
       const rows = [
         { keys: ["Space"], label: "Play / Pause" },
@@ -3186,6 +3258,15 @@
 
       const levelProgress = getLevelProgress(progress, viewLevelId);
 
+      // Drip unlocks: stamp newly-eligible weeks when the picker opens or progress
+      // changes, then read a status map for the week grid. No-op for open levels.
+      const [, setUnlockTick] = useState(0);
+      useEffect(() => {
+        if (settleWeekUnlocks(activeLevel, levelProgress)) setUnlockTick(t => t + 1);
+      }, [viewLevelId, progress]);
+      const unlockMap = weekUnlockStatus(activeLevel, levelProgress);
+      const weekLocked = (weekNum) => { const u = unlockMap[weekNum]; return !!(u && !u.unlocked); };
+
       const weekIsComplete = (weekNum) => {
         const weekProgress = levelProgress[weekNum];
         if (!weekProgress) return false;
@@ -3263,17 +3344,23 @@
               {!viewLevelLocked && activeLevel && (
               <div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-8">
-                {weeks.map(w => (
+                {weeks.map(w => {
+                  const locked = weekLocked(w.week);
+                  return (
                   <button
                     key={w.week}
                     className={`week-card ${selectedWeek === w.week ? 'active' : ''} ${weekIsComplete(w.week) ? 'complete' : ''}`}
-                    onClick={() => setSelectedWeek(w.week)}
+                    onClick={() => { if (!locked) setSelectedWeek(w.week); }}
+                    disabled={locked}
+                    style={locked ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
+                    title={locked ? unlockMap[w.week].reason : undefined}
                   >
-                    <div className="num">Level {w.week}</div>
+                    <div className="num">Level {w.week}{locked ? ' · Locked' : ''}</div>
                     <div className="title">{w.lessonTitle}</div>
-                    <div className="meta">{w.tasks.length} tasks</div>
+                    <div className="meta">{locked ? unlockMap[w.week].reason : (w.tasks.length + " tasks")}</div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
 
               {weekPlan && (
@@ -3302,6 +3389,7 @@
                           {/* Main row — click to load task */}
                           <button
                             onClick={() => {
+                              if (weekLocked(weekPlan.week)) return;   // drip: locked weeks can't start
                               onSelectLevel(viewLevelId);
                               onSelectWeek(weekPlan.week);
                               onSelectTask(i);
@@ -3675,6 +3763,14 @@
         }
         const nextWeekPlan = getWeekPlan(curriculumWeek + 1);
         if (nextWeekPlan && nextWeekPlan.tasks.length > 0) {
+          // Drip levels: never auto-advance into a week that hasn't unlocked yet.
+          const lv = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+          if (lv && lv.unlock) {
+            const lp = getLevelProgress(progress, currentLevelId);
+            settleWeekUnlocks(lv, lp);
+            const st = weekUnlockStatus(lv, lp);
+            if (st[nextWeekPlan.week] && !st[nextWeekPlan.week].unlocked) return null;
+          }
           return { week: curriculumWeek + 1, taskIndex: 0, task: nextWeekPlan.tasks[0] };
         }
         return null;
@@ -3698,7 +3794,9 @@
                 ...levelData,
                 [week]: {
                   ...(levelData[week] || {}),
-                  [taskIdx]: { ...existingObj, completed: true, score: accuracy }
+                  // count = real full runs of this task (drip unlocks read it).
+                  // Manual "mark complete" deliberately does NOT increment it.
+                  [taskIdx]: { ...existingObj, completed: true, score: accuracy, count: (typeof existingObj.count === 'number' ? existingObj.count : (existingObj.completed ? 1 : 0)) + 1 }
                 }
               }
             }
@@ -4707,6 +4805,20 @@
         // Free build: the guided course is members-only, so start free users in Custom
         // Practice (free-form, doesn't touch course progression) instead of a course task.
         if (IS_FREE && !isManualSession && !isLearnMode) { startManualSession(manualConfig); return; }
+        // Drip levels: if restored/steered state points into a locked week, snap
+        // back to the highest unlocked week instead of loading a gated task.
+        const lv = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+        if (lv && lv.unlock) {
+          const lp = getLevelProgress(progress, currentLevelId);
+          settleWeekUnlocks(lv, lp);
+          const st = weekUnlockStatus(lv, lp);
+          if (st[curriculumWeek] && !st[curriculumWeek].unlocked) {
+            const open = (lv.weeks || []).filter(w => st[w.week] && st[w.week].unlocked).map(w => w.week);
+            setCurriculumWeek(open.length ? Math.max(...open) : 1);
+            setCurriculumTaskIndex(0);
+            return;   // effect re-runs with the corrected week
+          }
+        }
         const task = getCurrentTask();
         if (task) {
           modeChangeSourceRef.current = 'internal';
