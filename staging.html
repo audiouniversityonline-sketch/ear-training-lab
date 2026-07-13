@@ -2591,8 +2591,9 @@
      * user-uploaded WAVs; a missing file falls back to pink noise.
      *
      * `range` is the band span where the source has enough energy to train on
-     * (a +6 dB bell outside it is barely audible). Shown as a hint in the picker;
-     * curriculum tasks will clamp to it when Level 3 adds program material.
+     * (a +6 dB bell outside it is barely audible). Data only, not displayed
+     * (Kyle's call); curriculum tasks will clamp to it when Level 3 adds
+     * program material.
      */
     const SOURCE_LIBRARY = [
       { id: 'course-acoustic', name: 'Acoustic',    category: 'Course Files', path: 'audio/course-acoustic.mp3',    range: [125, 4000] },
@@ -2608,13 +2609,6 @@
       { id: 'bgvocal',  name: 'Background Vocals', category: 'Vocals', path: 'audio/bg-vocals.mp3',       range: [125, 8000] },
       { id: 'piano',    name: 'Piano',             category: 'Solo Instruments', path: 'audio/piano-chopin.mp3', range: [125, 4000] }
     ];
-
-    // "125 Hz - 8 kHz" hint for a library source; null when it spans the full 9 octaves.
-    const sourceRangeLabel = (s) => {
-      if (!s.range || (s.range[0] <= 63 && s.range[1] >= 16000)) return null;
-      const f = (v) => v >= 1000 ? (v / 1000) + " kHz" : v + " Hz";
-      return f(s.range[0]) + " to " + f(s.range[1]);
-    };
 
     // Localized copy for mode descriptions — explains the WHY
     const MODE_DESCRIPTIONS = {
@@ -5991,7 +5985,6 @@
                       <div className="grid grid-cols-2 gap-2">
                         {libraryByCategory[category].map(s => {
                           const isActive = audioSource === 'custom' && activeSourceId === s.id;
-                          const rangeHint = sourceRangeLabel(s);
                           return (
                             <button
                               key={s.id}
@@ -6006,18 +5999,12 @@
                               }}
                             >
                               <div className="font-display font-semibold text-sm">{s.name}</div>
-                              {rangeHint && (
-                                <div className="font-mono text-[10px] mt-1" style={{ opacity: 0.65 }}>{rangeHint}</div>
-                              )}
                             </button>
                           );
                         })}
                       </div>
                     </div>
                   ))}
-                  <p className="text-[10px] font-mono text-mute leading-relaxed">
-                    The range under a source shows where it has enough energy to train on. Outside that range, an EQ move is hard to hear on any system.
-                  </p>
                 </section>
               )}
 

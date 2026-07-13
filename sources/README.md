@@ -40,5 +40,5 @@ guitar" and "solo instrument" slots are covered by Acoustic Guitar / Acoustic an
 5. Encode MP3 (~160 kbps), drop in `/audio/`, add an entry to `SOURCE_LIBRARY` in
    `staging.html` (id, name, category, path, `range: [lo, hi]`), verify, promote.
 
-`range` is where the source actually has energy — the picker shows it as a hint, and
-future curriculum tasks will clamp their frequency pools to it.
+`range` is where the source actually has energy. It is data only (not displayed in the
+picker, Kyle's call); future curriculum tasks will clamp their frequency pools to it.
