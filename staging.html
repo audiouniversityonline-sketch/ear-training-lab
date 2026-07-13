@@ -2595,13 +2595,18 @@
      * curriculum tasks will clamp to it when Level 3 adds program material.
      */
     const SOURCE_LIBRARY = [
+      { id: 'course-acoustic', name: 'Acoustic',    category: 'Course Files', path: 'audio/course-acoustic.mp3',    range: [125, 4000] },
+      { id: 'first-timer',     name: 'First Timer', category: 'Course Files', path: 'audio/course-first-timer.mp3', range: [63, 16000] },
+      { id: 'me-vs-world',     name: 'Me vs World', category: 'Course Files', path: 'audio/course-me-vs-world.mp3', range: [63, 16000] },
+      { id: 'course-strings',  name: 'Strings',     category: 'Course Files', path: 'audio/course-strings.mp3',     range: [125, 8000] },
       { id: 'drums',    name: 'Drums',             category: 'Drums',  path: 'audio/drums.mp3',           range: [63, 16000] },
       { id: 'kick',     name: 'Kick',              category: 'Drums',  path: 'audio/kick.mp3',            range: [63, 4000] },
       { id: 'snare',    name: 'Snare',             category: 'Drums',  path: 'audio/snare.mp3',           range: [125, 16000] },
       { id: 'bass',     name: 'Bass',              category: 'Bass',   path: 'audio/bass.mp3',            range: [63, 4000] },
       { id: 'acoustic', name: 'Acoustic Guitar',   category: 'Guitar', path: 'audio/acoustic-guitar.mp3', range: [125, 8000] },
       { id: 'vocal',    name: 'Lead Vocal',        category: 'Vocals', path: 'audio/vocal.mp3',           range: [125, 8000] },
-      { id: 'bgvocal',  name: 'Background Vocals', category: 'Vocals', path: 'audio/bg-vocals.mp3',       range: [125, 8000] }
+      { id: 'bgvocal',  name: 'Background Vocals', category: 'Vocals', path: 'audio/bg-vocals.mp3',       range: [125, 8000] },
+      { id: 'piano',    name: 'Piano',             category: 'Solo Instruments', path: 'audio/piano-chopin.mp3', range: [125, 4000] }
     ];
 
     // "125 Hz - 8 kHz" hint for a library source; null when it spans the full 9 octaves.
@@ -5978,7 +5983,7 @@
                 <section>
                   <div className="eyebrow mb-3">Source Library</div>
                   <p className="text-xs text-mute mb-4 leading-relaxed">
-                    Real, loudness matched source material shared with the Compression module. Pink noise teaches the bands. These teach the bands as they sit in actual mixes.
+                    Real, loudness matched source material, including the training files from the Level 1 course. Pink noise teaches the bands. These teach the bands as they sit in actual mixes.
                   </p>
                   {Object.keys(libraryByCategory).map(category => (
                     <div key={category} className="mb-4">

@@ -5,19 +5,30 @@ EQ and Compression modules. (This `/sources/` WAV plan is retired — kept only 
 
 Current library (all from the same session, loudness-matched):
 
-| File                 | EQ picker name     | Usable range    |
-|----------------------|--------------------|-----------------|
-| drums.mp3            | Drums              | full range      |
-| kick.mp3             | Kick               | 63 Hz – 4 kHz   |
-| snare.mp3            | Snare              | 125 Hz – 16 kHz |
-| bass.mp3             | Bass               | 63 Hz – 4 kHz   |
-| acoustic-guitar.mp3  | Acoustic Guitar    | 125 Hz – 8 kHz  |
-| vocal.mp3            | Lead Vocal         | 125 Hz – 8 kHz  |
-| bg-vocals.mp3        | Background Vocals  | 125 Hz – 8 kHz  |
+| File                    | EQ picker name     | Category         | Usable range    |
+|-------------------------|--------------------|------------------|-----------------|
+| course-acoustic.mp3     | Acoustic           | Course Files     | 125 Hz – 4 kHz  |
+| course-first-timer.mp3  | First Timer        | Course Files     | full range      |
+| course-me-vs-world.mp3  | Me vs World        | Course Files     | full range      |
+| course-strings.mp3      | Strings            | Course Files     | 125 Hz – 8 kHz  |
+| drums.mp3               | Drums              | Drums            | full range      |
+| kick.mp3                | Kick               | Drums            | 63 Hz – 4 kHz   |
+| snare.mp3               | Snare              | Drums            | 125 Hz – 16 kHz |
+| bass.mp3                | Bass               | Bass             | 63 Hz – 4 kHz   |
+| acoustic-guitar.mp3     | Acoustic Guitar    | Guitar           | 125 Hz – 8 kHz  |
+| vocal.mp3               | Lead Vocal         | Vocals           | 125 Hz – 8 kHz  |
+| bg-vocals.mp3           | Background Vocals  | Vocals           | 125 Hz – 8 kHz  |
+| piano-chopin.mp3        | Piano              | Solo Instruments | 125 Hz – 4 kHz  |
+
+The Course Files are the four training WAVs called out in the Level 1 course
+(Google Drive: Production/Courses/Ear Training (Level 1)/Training Files), gain-matched
+from their masters. Piano is a 40 s excerpt (116–156 s) of Musopen's CC0 recording of
+Chopin's Nocturne Op. 32 No. 1 (archive.org item `musopen-chopin`).
 
 Planned additions (Level 3 program material, per the TET-3 syllabus — all run 125 Hz – 8 kHz):
-speech English male (Kyle records), speech female + speech German (LibriVox public domain),
-classical guitar + solo instruments (Musopen public domain), full mix (bounce of the stem song).
+speech English male (Kyle records; LibriVox speech rejected on quality), speech female +
+speech German (source TBD), full mix (bounce of the stem song). The syllabus "classical
+guitar" and "solo instrument" slots are covered by Acoustic Guitar / Acoustic and Piano.
 
 ## Pipeline for new files
 
