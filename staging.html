@@ -715,6 +715,11 @@
     // Free build: served as lab.html?free=1 (paid build is plain lab.html, unaffected).
     // Free = limited EQ (Practice + Learn; the guided course is members-only) and no Compression.
     const IS_FREE = (typeof window !== "undefined") && (window.AU_FREE === true || (function () { try { return new URLSearchParams(window.location.search).get("free") === "1"; } catch (e) { return false; } })());
+    // Preview mode: ?preview=1 turns off the level entry gate and week drip so
+    // curriculum can be tested end to end. STAGING ONLY by construction: the flag
+    // requires "staging" in the path, so lab.html?preview=1 does nothing for
+    // members even though production ships this same code.
+    const PREVIEW_UNLOCK = (typeof window !== "undefined") && /staging/i.test(window.location.pathname) && (function () { try { return new URLSearchParams(window.location.search).get("preview") === "1"; } catch (e) { return false; } })();
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/membership";
     // Kit (account upbeat-creator-1556, form uid e6cf75d3ed). We post to the public
@@ -2845,7 +2850,7 @@
     function weekUnlockStatus(level, levelProgress) {
       const out = {};
       const weeks = (level && level.weeks) || [];
-      const rule = level && level.unlock;
+      const rule = PREVIEW_UNLOCK ? null : (level && level.unlock);
       if (!rule) { weeks.forEach(w => { out[w.week] = { unlocked: true }; }); return out; }
       const stamps = (STORAGE.get(WEEK_UNLOCKS_KEY, {}) || {})[level.id] || {};
       const need = rule.completionsPerWeek || 3;
@@ -2869,6 +2874,7 @@
     // Stamp any weeks that just became eligible. Monotonic: stamps only get added.
     // Returns true if something new unlocked (callers re-render on that).
     function settleWeekUnlocks(level, levelProgress) {
+      if (PREVIEW_UNLOCK) return false;   // previewing must not start real unlock clocks
       const rule = level && level.unlock;
       if (!rule) return false;
       const all = STORAGE.get(WEEK_UNLOCKS_KEY, {}) || {};
@@ -2899,6 +2905,7 @@
      * level 1 work exists to prepare you for.
      */
     function levelEntryStatus(level, progress) {
+      if (PREVIEW_UNLOCK) return { locked: false };
       const reqId = level && level.requiresLevel;
       if (!reqId) return { locked: false };
       const prereq = (CURRICULUM.levels || []).find(l => l.id === reqId);
@@ -3335,6 +3342,11 @@
 
             <div className={inline ? "" : "p-6"}>
 
+              {PREVIEW_UNLOCK && (
+                <div className="mb-4 px-3 py-2 border rule font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--amber)" }}>
+                  Preview mode: entry gate and weekly unlocks are off (staging only)
+                </div>
+              )}
               {levelPills.length > 1 && (
                 <div className="mb-6 flex flex-wrap gap-2">
                   {levelPills.map(pill => {
