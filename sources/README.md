@@ -1,34 +1,33 @@
-# Source Material Library
+# Source Library
 
-Drop the following WAV files in this directory to populate the Source Material picker
-in the full version of Ear Training Lab. Filenames must match exactly.
+The curated source library lives in `/audio/` as loudness-matched MP3s, shared by the
+EQ and Compression modules. (This `/sources/` WAV plan is retired — kept only for this doc.)
 
-| Filename                 | Category | Notes                                       |
-|--------------------------|----------|---------------------------------------------|
-| kick.wav                 | Drums    | Solo kick loop                              |
-| snare.wav                | Drums    | Solo snare loop                             |
-| hihat.wav                | Drums    | Closed hi-hat pattern                       |
-| drum-bus.wav             | Drums    | Full kit / bus                              |
-| bass-di.wav              | Bass     | DI bass, no amp/cab                         |
-| electric-guitar.wav      | Guitar   | Clean or lightly-driven electric            |
-| acoustic-guitar.wav      | Guitar   | Strummed or fingerpicked acoustic           |
-| male-vocal.wav           | Vocal    | Solo male vocal phrase                      |
-| female-vocal.wav         | Vocal    | Solo female vocal phrase                    |
-| full-mix.wav             | Mix      | Polished full mix at -1 dBTP or so          |
+Current library (all from the same session, loudness-matched):
 
-## Recommended specs
+| File                 | EQ picker name     | Usable range    |
+|----------------------|--------------------|-----------------|
+| drums.mp3            | Drums              | full range      |
+| kick.mp3             | Kick               | 63 Hz – 4 kHz   |
+| snare.mp3            | Snare              | 125 Hz – 16 kHz |
+| bass.mp3             | Bass               | 63 Hz – 4 kHz   |
+| acoustic-guitar.mp3  | Acoustic Guitar    | 125 Hz – 8 kHz  |
+| vocal.mp3            | Lead Vocal         | 125 Hz – 8 kHz  |
+| bg-vocals.mp3        | Background Vocals  | 125 Hz – 8 kHz  |
 
-- **Format**: uncompressed WAV (mono or stereo).
-- **Sample rate**: 44.1 kHz.
-- **Bit depth**: 16- or 24-bit.
-- **Length**: 2–6 seconds. The clip loops in the engine, so make the loop point clean.
-- **Level**: normalize to around **−6 dBFS peak**. The training applies up to +12 dB
-  of EQ boost on top of the source — anything hotter than −6 dBFS will clip when
-  filtered.
-- **Mono vs stereo**: either is fine. Mono is preferred for instruments so the EQ
-  changes are unambiguous; full mixes can stay stereo.
+Planned additions (Level 3 program material, per the TET-3 syllabus — all run 125 Hz – 8 kHz):
+speech English male (Kyle records), speech female + speech German (LibriVox public domain),
+classical guitar + solo instruments (Musopen public domain), full mix (bounce of the stem song).
 
-## Adding new sources
+## Pipeline for new files
 
-To add a new source, edit `SOURCE_LIBRARY` in `full.html` and
-drop the WAV in this directory.
+1. Pick a clean 15–30 s excerpt that loops musically.
+2. Mono (instruments/speech), 44.1 kHz.
+3. Loudness-match to the library: ffmpeg linear loudnorm to **−19 LUFS**, confirm no clipping
+   (the trainer adds up to +12 dB of EQ on top).
+4. Short edge fades (~4 ms) so the loop point doesn't click.
+5. Encode MP3 (~160 kbps), drop in `/audio/`, add an entry to `SOURCE_LIBRARY` in
+   `staging.html` (id, name, category, path, `range: [lo, hi]`), verify, promote.
+
+`range` is where the source actually has energy — the picker shows it as a hint, and
+future curriculum tasks will clamp their frequency pools to it.

@@ -723,7 +723,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.10";
+    const APP_VERSION = "v2.11";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -2586,28 +2586,30 @@
     }
 
     /*
-     * Curated source library (Phase 5a). WAV files live in `/sources/` next to the HTML.
-     * Selecting one decodes via the same handleFileUpload pathway used for user-uploaded
-     * files. Missing files surface a friendly error and fall back to pink noise.
+     * Curated source library. Loudness-matched MP3s in `/audio/`, shared with the
+     * Compression module. Selecting one decodes through the same pipeline as
+     * user-uploaded WAVs; a missing file falls back to pink noise.
      *
-     * To author the library: drop kick.wav, snare.wav, etc. in `/sources/`. Recommended
-     * specs: mono or stereo WAV, 44.1 kHz, 16- or 24-bit, 2–6 seconds, normalized to
-     * around -6 dBFS peak so it sits comfortably under the +12 dB EQ moves.
+     * `range` is the band span where the source has enough energy to train on
+     * (a +6 dB bell outside it is barely audible). Shown as a hint in the picker;
+     * curriculum tasks will clamp to it when Level 3 adds program material.
      */
-    // Hidden until the WAV files exist in /sources/. Flip to true to re-enable the picker.
-    const SHOW_SOURCE_LIBRARY = false;
     const SOURCE_LIBRARY = [
-      { id: 'kick',         name: 'Kick Drum',         category: 'Drums',      path: 'sources/kick.wav' },
-      { id: 'snare',        name: 'Snare Drum',        category: 'Drums',      path: 'sources/snare.wav' },
-      { id: 'hihat',        name: 'Hi-Hat',            category: 'Drums',      path: 'sources/hihat.wav' },
-      { id: 'drum-bus',     name: 'Drum Bus',          category: 'Drums',      path: 'sources/drum-bus.wav' },
-      { id: 'bass-di',      name: 'Bass DI',           category: 'Bass',       path: 'sources/bass-di.wav' },
-      { id: 'electric-gtr', name: 'Electric Guitar',   category: 'Guitar',     path: 'sources/electric-guitar.wav' },
-      { id: 'acoustic-gtr', name: 'Acoustic Guitar',   category: 'Guitar',     path: 'sources/acoustic-guitar.wav' },
-      { id: 'male-vocal',   name: 'Male Vocal',        category: 'Vocal',      path: 'sources/male-vocal.wav' },
-      { id: 'female-vocal', name: 'Female Vocal',      category: 'Vocal',      path: 'sources/female-vocal.wav' },
-      { id: 'full-mix',     name: 'Full Mix',          category: 'Mix',        path: 'sources/full-mix.wav' }
+      { id: 'drums',    name: 'Drums',             category: 'Drums',  path: 'audio/drums.mp3',           range: [63, 16000] },
+      { id: 'kick',     name: 'Kick',              category: 'Drums',  path: 'audio/kick.mp3',            range: [63, 4000] },
+      { id: 'snare',    name: 'Snare',             category: 'Drums',  path: 'audio/snare.mp3',           range: [125, 16000] },
+      { id: 'bass',     name: 'Bass',              category: 'Bass',   path: 'audio/bass.mp3',            range: [63, 4000] },
+      { id: 'acoustic', name: 'Acoustic Guitar',   category: 'Guitar', path: 'audio/acoustic-guitar.mp3', range: [125, 8000] },
+      { id: 'vocal',    name: 'Lead Vocal',        category: 'Vocals', path: 'audio/vocal.mp3',           range: [125, 8000] },
+      { id: 'bgvocal',  name: 'Background Vocals', category: 'Vocals', path: 'audio/bg-vocals.mp3',       range: [125, 8000] }
     ];
+
+    // "125 Hz - 8 kHz" hint for a library source; null when it spans the full 9 octaves.
+    const sourceRangeLabel = (s) => {
+      if (!s.range || (s.range[0] <= 63 && s.range[1] >= 16000)) return null;
+      const f = (v) => v >= 1000 ? (v / 1000) + " kHz" : v + " Hz";
+      return f(s.range[0]) + " to " + f(s.range[1]);
+    };
 
     // Localized copy for mode descriptions — explains the WHY
     const MODE_DESCRIPTIONS = {
@@ -5923,20 +5925,6 @@
                     Pink Noise
                   </button>
                   <button
-                    className={audioSource === 'custom' && activeSourceId === 'drums' ? 'active' : ''}
-                    onClick={() => onSelectLibrarySource({ id: 'drums', name: 'Drums', path: 'audio/drums.mp3' })}
-                    disabled={!audioReady || isLoadingFile}
-                  >
-                    Drums
-                  </button>
-                  <button
-                    className={audioSource === 'custom' && activeSourceId === 'vocal' ? 'active' : ''}
-                    onClick={() => onSelectLibrarySource({ id: 'vocal', name: 'Vocal', path: 'audio/vocal.mp3' })}
-                    disabled={!audioReady || isLoadingFile}
-                  >
-                    Vocal
-                  </button>
-                  <button
                     className={audioSource === 'custom' && !activeSourceId ? 'active' : ''}
                     onClick={() => setAudioSource('custom')}
                     disabled={!audioReady || !customFileName || !!activeSourceId}
@@ -5981,16 +5969,16 @@
                   </div>
                 )}
                 <p className="text-xs text-mute mt-3 leading-relaxed">
-                  Pink noise is built for ear training. Equal energy per octave exposes every filter move clearly. Drums and Vocal are real, loudness-matched source material shared with the Compression module. Or upload your own WAV to train on a mix you know.
+                  Pink noise is built for ear training. Equal energy per octave exposes every filter move clearly. Or upload your own WAV to train on a mix you know.
                 </p>
               </section>
 
-              {/* Source library — curated WAVs (hidden until the files exist) */}
-              {onSelectLibrarySource && SHOW_SOURCE_LIBRARY && (
+              {/* Source library — loudness-matched real audio */}
+              {onSelectLibrarySource && (
                 <section>
-                  <div className="eyebrow mb-3">Source Material</div>
+                  <div className="eyebrow mb-3">Source Library</div>
                   <p className="text-xs text-mute mb-4 leading-relaxed">
-                    Train on real instruments. Pink noise teaches the bands; these teach the bands as they sit in actual mixes.
+                    Real, loudness matched source material shared with the Compression module. Pink noise teaches the bands. These teach the bands as they sit in actual mixes.
                   </p>
                   {Object.keys(libraryByCategory).map(category => (
                     <div key={category} className="mb-4">
@@ -5998,6 +5986,7 @@
                       <div className="grid grid-cols-2 gap-2">
                         {libraryByCategory[category].map(s => {
                           const isActive = audioSource === 'custom' && activeSourceId === s.id;
+                          const rangeHint = sourceRangeLabel(s);
                           return (
                             <button
                               key={s.id}
@@ -6012,12 +6001,18 @@
                               }}
                             >
                               <div className="font-display font-semibold text-sm">{s.name}</div>
+                              {rangeHint && (
+                                <div className="font-mono text-[10px] mt-1" style={{ opacity: 0.65 }}>{rangeHint}</div>
+                              )}
                             </button>
                           );
                         })}
                       </div>
                     </div>
                   ))}
+                  <p className="text-[10px] font-mono text-mute leading-relaxed">
+                    The range under a source shows where it has enough energy to train on. Outside that range, an EQ move is hard to hear on any system.
+                  </p>
                 </section>
               )}
 
