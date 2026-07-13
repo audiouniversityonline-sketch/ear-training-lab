@@ -776,8 +776,9 @@
       hard:   { low: 3, high: 4.5, threshold: -40 },
     };
     // Threshold comparison: same ratio (BASE), different threshold. The lower
-    // threshold compresses more of the signal, so it sounds harder. Gap shrinks
-    // with difficulty. Same "which is harder?" question as ratio (both = amount).
+    // threshold compresses more of the signal, so it sounds more compressed.
+    // Asked in parameter-native terms ("which channel has the lower threshold?");
+    // the correct answer is the lower-threshold channel. Gap shrinks with difficulty.
     const THRESH_BY_DIFF = {
       easy:   { hi: -22, lo: -46 },
       medium: { hi: -27, lo: -40 },
@@ -786,8 +787,8 @@
     // Rank: three values of one control, always listed least->most (compressed) or
     // fastest->slowest. `base` modifies the other settings so the difference is audible.
     const RANK_SETS = {
-      ratio:     { base: { threshold: -44 }, easy: [1.5, 4, 16],        medium: [2.5, 5, 11],       hard: [3, 5, 8],             label: "least to most compressed" },
-      threshold: { base: { ratio: 6 },       easy: [-16, -33, -50],     medium: [-22, -34, -46],    hard: [-28, -34, -41],       label: "least to most compressed" },
+      ratio:     { base: { threshold: -44 }, easy: [1.5, 4, 16],        medium: [2.5, 5, 11],       hard: [3, 5, 8],             label: "lowest to highest ratio" },
+      threshold: { base: { ratio: 6 },       easy: [-16, -33, -50],     medium: [-22, -34, -46],    hard: [-28, -34, -41],       label: "highest to lowest threshold" },
       attack:    { base: {},                 easy: [0.001, 0.03, 0.12], medium: [0.004, 0.02, 0.075], hard: [0.007, 0.02, 0.05], label: "fastest to slowest attack" },
       release:   { base: {},                 easy: [0.025, 0.18, 0.55], medium: [0.05, 0.16, 0.4],  hard: [0.07, 0.16, 0.3],     label: "fastest to slowest release" },
     };
@@ -843,18 +844,39 @@
     const MODE_ORDER = ["detect", "compare", "rank", "match"];   // "whatChanged" retired for now
 
     // Guided curriculum. Each level fixes a mode, source, and difficulty, and passes at need/of.
+    // Six tiers: detect -> amount (threshold/ratio) -> timing (attack/release) -> rank
+    // (calibration) -> name it blind -> reproduce (match, ending in combined capstones).
+    // Legacy ids (c1-c11) are kept wherever a level survives so saved progress
+    // (LEVELS_KEY map of passed ids) carries over; new levels use c12+.
     const LEVELS = [
+      // Tier 1 - Detection: is it compressed at all? Transient, then subtle, then sustained.
       { id: "c1", title: "Hear it", mode: "detect", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c2", title: "The subtle one", mode: "detect", source: "drums", difficulty: "hard", need: 6, of: 8 },
+      { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
+      // Tier 2 - Amount: the two "how much" controls, asked in native terms
+      // (higher ratio / lower threshold), then mixed.
+      { id: "c12", title: "Ratio: high or low", mode: "compare", practicePool: ["ratio"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c13", title: "Threshold: high or low", mode: "compare", practicePool: ["threshold"], source: "bass", difficulty: "medium", need: 6, of: 8 },
+      { id: "c14", title: "Amount: either control", mode: "compare", practicePool: ["threshold", "ratio"], source: "vocal", difficulty: "hard", need: 7, of: 10 },
+      // Tier 3 - Timing: attack and release shape the envelope; transient material shows it.
       { id: "c3", title: "Fast or slow", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c15", title: "Snare: attack only", mode: "compare", practicePool: ["attack"], source: "snare", difficulty: "medium", need: 6, of: 8 },
       { id: "c4", title: "Read the move", mode: "compare", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 7, of: 10 },
+      // Tier 4 - Rank: order three settings; builds "how much", not just "which way".
+      { id: "c16", title: "Rank: ratio", mode: "rank", practicePool: ["ratio"], source: "drums", difficulty: "easy", need: 6, of: 8 },
+      { id: "c17", title: "Rank: threshold", mode: "rank", practicePool: ["threshold"], source: "bass", difficulty: "medium", need: 6, of: 8 },
+      { id: "c18", title: "Rank: timing", mode: "rank", practicePool: ["attack", "release"], source: "drums", difficulty: "hard", need: 6, of: 10 },
+      // Tier 5 - Name it: one knob moved; say which, without seeing anything.
       { id: "c5", title: "Name the knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 2, need: 6, of: 8 },
       { id: "c6", title: "Name any knob", mode: "whatChanged", source: "drums", difficulty: "medium", pool: 4, need: 7, of: 10 },
+      // Tier 6 - Reproduce: dial in a target by ear, across material, then combined.
       { id: "c7", title: "Match: two-way", mode: "match", source: "drums", difficulty: "easy", need: 6, of: 8 },
       { id: "c8", title: "Match: stepped", mode: "match", source: "drums", difficulty: "medium", need: 6, of: 8 },
-      { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
-      { id: "c10", title: "Bass: hear it", mode: "detect", source: "bass", difficulty: "medium", need: 6, of: 8 },
       { id: "c11", title: "Bass: match threshold", mode: "match", source: "bass", difficulty: "medium", practicePool: ["threshold"], need: 6, of: 8 },
+      { id: "c19", title: "Vocal: match the amount", mode: "match", source: "vocal", difficulty: "medium", practicePool: ["threshold", "ratio"], need: 6, of: 8 },
+      { id: "c9", title: "Match: freehand", mode: "match", source: "drums", difficulty: "hard", need: 6, of: 10 },
+      { id: "c20", title: "All at once: two knobs", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio"], source: "acoustic", difficulty: "medium", need: 6, of: 8 },
+      { id: "c21", title: "The full board", mode: "match", matchCombine: true, practicePool: ["threshold", "ratio", "attack", "release"], source: "drums", difficulty: "hard", need: 5, of: 8 },
     ];
     const LEVELS_KEY = "au_comp_levels_v1";
     const loadPassed = () => { try { return JSON.parse(localStorage.getItem(LEVELS_KEY) || "{}") || {}; } catch (e) { return {}; } };
@@ -1421,7 +1443,7 @@
       const [isPlaying, setIsPlaying] = useState(false);
       const [listenCh, setListenCh] = useState("A");
 
-      const [area, setArea] = useState("practice");   // practice | learn  (Levels removed from Compression)
+      const [area, setArea] = useState("levels");   // levels | practice | learn — Levels is the guided path and the landing area
       const isLearn = area === "learn";
       const [activeLevel, setActiveLevel] = useState(null);
       const [levelAnswered, setLevelAnswered] = useState(0);
@@ -1471,7 +1493,10 @@
       const roles = isLearn ? { A: "Dry", B: "Yours" } : (round && round.mode === "match") ? { A: "Target", B: "Yours" } : (round && round.mode === "rank") ? { A: "Channel A", B: "Channel B", C: "Channel C" } : { A: "Channel A", B: "Channel B" };
       const auditionChannels = (round && round.mode === "rank") ? ["A", "B", "C"] : ["A", "B"];
       const passedCount = Object.keys(passedLevels).filter(k => LEVELS.some(l => l.id === k)).length;
-      const levelUnlocked = (i) => i === 0 || !!passedLevels[LEVELS[i - 1].id];
+      // A level is unlocked by passing the one before it. A level you have already
+      // passed always stays unlocked, so inserting new levels into the sequence
+      // never re-locks progress earned under an older curriculum.
+      const levelUnlocked = (i) => i === 0 || !!passedLevels[LEVELS[i].id] || !!passedLevels[LEVELS[i - 1].id];
       const levelIndex = activeLevel ? LEVELS.findIndex(l => l.id === activeLevel.id) : -1;
 
       const measure = async (preset) => {
@@ -1575,15 +1600,15 @@
             presetA = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.low : rr.high };
             presetB = { ...BASE, threshold: rr.threshold, ratio: harderIsB ? rr.high : rr.low };
             answer = harderIsB ? "B" : "A";
-            options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
-            prompt = "Which channel is compressed harder?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
+            options = [{ key: "A", label: "A has the higher ratio" }, { key: "B", label: "B has the higher ratio" }];
+            prompt = "Which channel has the higher ratio?"; detail = { control: "ratio", lowRatio: rr.low, highRatio: rr.high, harder: answer };
           } else if (control === "threshold") {
             const tt = THRESH_BY_DIFF[diff], harderIsB = Math.random() < 0.5;
             presetA = { ...BASE, threshold: harderIsB ? tt.hi : tt.lo };
             presetB = { ...BASE, threshold: harderIsB ? tt.lo : tt.hi };
             answer = harderIsB ? "B" : "A";
-            options = [{ key: "A", label: "A is compressed harder" }, { key: "B", label: "B is compressed harder" }];
-            prompt = "Which channel is compressed harder?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
+            options = [{ key: "A", label: "A has the lower threshold" }, { key: "B", label: "B has the lower threshold" }];
+            prompt = "Which channel has the lower threshold?"; detail = { control: "threshold", hiThresh: tt.hi, loThresh: tt.lo, harder: answer };
           } else {
             const slower = Math.random() < 0.5, ar = AR_BY_DIFF[diff];
             presetA = { ...BASE }; presetB = { ...BASE }; presetB[control] = slower ? ar[control].slow : ar[control].fast;
@@ -1880,7 +1905,7 @@
       };
 
       const revealCue = () => { if (!round) return ""; if (round.mode === "detect") return "The compressed channel is " + round.answer + ". The compressed signal has softer peaks and a steadier, more even level."; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " uses a " + fmtRatio(round.detail.highRatio) + " ratio versus " + fmtRatio(round.detail.lowRatio) + ". The higher ratio clamps the peaks more, so it sounds flatter and more even."; if (round.detail.control === "threshold") return "Channel " + round.answer + " uses a lower threshold (" + round.detail.loThresh + " dB versus " + round.detail.hiThresh + " dB), so more of the signal is compressed. It sounds flatter and more even."; return CUE[round.detail.control + "|" + round.detail.direction] || ""; } return CUE[round.detail.param + "|" + round.detail.direction] || ""; };
-      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio" || round.detail.control === "threshold") return "Channel " + round.answer + " is compressed harder"; return "B's " + round.detail.control + " time was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
+      const revealHeadline = () => { if (!round) return ""; if (round.mode === "detect") return "Channel " + round.answer + " was compressed"; if (round.mode === "compare") { if (round.detail.control === "ratio") return "Channel " + round.answer + " has the higher ratio"; if (round.detail.control === "threshold") return "Channel " + round.answer + " has the lower threshold"; return "B's " + round.detail.control + " time was " + round.detail.direction; } return CAP(round.detail.param) + " changed (" + round.detail.direction + ")"; };
 
       const sessionPct = sessionTotal > 0 ? sessionCorrect / sessionTotal : 0;
       const scopeSrc = isLearn ? learnScope : (round && round.mode === "match" && round.combine) ? null : (round && round.mode === "match" ? matchScope : (round && round.mode === "rank") ? null : (round ? { envA: round.envA, envB: round.envB, makeupA: round.makeupA, makeupB: round.makeupB } : null));
@@ -1913,6 +1938,7 @@
                   <button className={activeModule === "compression" ? "active" : ""} onClick={() => onSwitchModule("compression")}>Compression</button>
                 </div>
                 <div className="seg" role="group" aria-label="Area">
+                  <button className={area === "levels" ? "active" : ""} onClick={goLevels} disabled={!audioReady}>Levels</button>
                   <button className={area === "practice" ? "active" : ""} onClick={goPractice} disabled={!audioReady}>Practice</button>
                   <button className={area === "learn" ? "active" : ""} onClick={enterLearn} disabled={!audioReady}>Learn</button>
                 </div>
@@ -2429,6 +2455,29 @@
     }
     function percent(n, d) { return !d ? "0%" : Math.round((n / d) * 100) + "%"; }
 
+    // Ear-training cue framework: each octave band has a memorable vowel sound
+    // (250 Hz - 4 kHz), a sibilance character (8 kHz - 16 kHz), or a felt haptic
+    // sensation (below 250 Hz). Shown under the answer buttons to build the
+    // association for beginners; hideable in Settings. Only the 9 octave bands
+    // carry a cue; third-octave frequencies show nothing.
+    const FREQ_CUES = {
+      63:    { kind: "haptic",    label: "abdomen" },
+      125:   { kind: "haptic",    label: "chest" },
+      250:   { kind: "vowel",     label: "oo" },
+      500:   { kind: "vowel",     label: "oh" },     // best-guess vowel — confirm with Kyle
+      1000:  { kind: "vowel",     label: "ah" },
+      2000:  { kind: "vowel",     label: "eh" },     // best-guess vowel — confirm with Kyle
+      4000:  { kind: "vowel",     label: "ee" },
+      8000:  { kind: "sibilance", label: "sss" },
+      16000: { kind: "sibilance", label: "sss-t" },
+    };
+    // Sounds are shown in quotes ("ah") to signal "make this sound"; haptic cues
+    // (chest / abdomen) are body locations, shown plain.
+    function cueLabel(f) {
+      const c = FREQ_CUES[f];
+      if (!c) return "";
+      return c.kind === "haptic" ? c.label : "“" + c.label + "”";
+    }
     function bandLabel(f) {
       if (f === undefined || f === null) return "??";
       if (f >= 1000) {
@@ -3451,6 +3500,9 @@
       const [eqMode, setEqMode] = useState("boost");
       const [outputTrim, setOutputTrim] = useState(-3);
       const [bandPool, setBandPool] = useState(OCTAVE_BANDS);
+      // Frequency cues on answer buttons — on by default, remembered per device.
+      const [showCues, setShowCuesState] = useState(() => STORAGE.get("showCues", true));
+      const setShowCues = (v) => { setShowCuesState(v); STORAGE.set("showCues", v); };
       const [timeLimit, setTimeLimit] = useState(0);
       const [timeRemaining, setTimeRemaining] = useState(null);
 
@@ -5102,7 +5154,7 @@
                                   style={taken ? { opacity: 0.25 } : {}}
                                   title={taken ? 'Already picked in another slot' : undefined}
                                 >
-                                  <span className="label">{bandLabel(freq)}</span>
+                                  <span className="label">{bandLabel(freq)}</span>{showCues && FREQ_CUES[freq] && <span style={{ fontSize: 11, opacity: 0.72, marginTop: 1, lineHeight: 1.1 }}>{cueLabel(freq)}</span>}
                                 </button>
                               );
                             })}
@@ -5183,7 +5235,7 @@
                             }}
                             disabled={!audioReady}
                           >
-                            <span className="label">{bandLabel(freq)}</span>
+                            <span className="label">{bandLabel(freq)}</span>{showCues && FREQ_CUES[freq] && <span style={{ fontSize: 11, opacity: 0.72, marginTop: 1, lineHeight: 1.1 }}>{cueLabel(freq)}</span>}
                             <span className="index">{i + 1}</span>
                           </button>
                         );
@@ -5388,6 +5440,8 @@
             onOpenManual={() => { setShowDrawer(false); setShowManualSetup(true); }}
             onSelectLibrarySource={loadSourceFromLibrary}
             activeSourceId={activeSourceId}
+            showCues={showCues}
+            onToggleCues={setShowCues}
             audioReady={audioReady}
             onResetProgress={() => {
               if (confirm("Clear all progress data? This can't be undone.")) {
@@ -5442,7 +5496,7 @@
       open, onClose, audioSource, setAudioSource,
       customFileName, customAudioInfo, onFileUpload, isLoadingFile,
       outputTrim, setOutputTrim, resetStats, onOpenCurriculum, onOpenManual, audioReady,
-      onResetProgress, onSelectLibrarySource, activeSourceId
+      onResetProgress, onSelectLibrarySource, activeSourceId, showCues, onToggleCues
     }) {
       const fileInputRef = useRef(null);
 
@@ -5468,6 +5522,16 @@
               {/* Appearance (global light/dark) */}
               <section>
                 <ThemeControl />
+              </section>
+
+              {/* Frequency cues on answer buttons (vowel / sibilance / haptic) */}
+              <section>
+                <div className="eyebrow mb-2">Frequency cues</div>
+                <div className="seg w-full" style={{ display: "grid", gridTemplateColumns: "1fr 1fr" }}>
+                  <button className={showCues ? "active" : ""} onClick={() => onToggleCues(true)}>Show</button>
+                  <button className={!showCues ? "active" : ""} onClick={() => onToggleCues(false)}>Hide</button>
+                </div>
+                <p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Shows the vowel, sibilance, or haptic cue under each frequency on the answer buttons. Keep it on while you build the association; hide it once the sounds are second nature.</p>
               </section>
 
               {/* Curriculum shortcut */}
@@ -5510,9 +5574,23 @@
                     Pink Noise
                   </button>
                   <button
-                    className={audioSource === 'custom' ? 'active' : ''}
+                    className={audioSource === 'custom' && activeSourceId === 'drums' ? 'active' : ''}
+                    onClick={() => onSelectLibrarySource({ id: 'drums', name: 'Drums', path: 'audio/drums.mp3' })}
+                    disabled={!audioReady || isLoadingFile}
+                  >
+                    Drums
+                  </button>
+                  <button
+                    className={audioSource === 'custom' && activeSourceId === 'vocal' ? 'active' : ''}
+                    onClick={() => onSelectLibrarySource({ id: 'vocal', name: 'Vocal', path: 'audio/vocal.mp3' })}
+                    disabled={!audioReady || isLoadingFile}
+                  >
+                    Vocal
+                  </button>
+                  <button
+                    className={audioSource === 'custom' && !activeSourceId ? 'active' : ''}
                     onClick={() => setAudioSource('custom')}
-                    disabled={!audioReady || !customFileName}
+                    disabled={!audioReady || !customFileName || !!activeSourceId}
                   >
                     Custom File
                   </button>
@@ -5554,7 +5632,7 @@
                   </div>
                 )}
                 <p className="text-xs text-mute mt-3 leading-relaxed">
-                  Pink noise is built for ear training — equal energy per octave exposes every filter move clearly. Use a custom WAV when you want to train on source material you mix.
+                  Pink noise is built for ear training. Equal energy per octave exposes every filter move clearly. Drums and Vocal are real, loudness-matched source material shared with the Compression module. Or upload your own WAV to train on a mix you know.
                 </p>
               </section>
 
