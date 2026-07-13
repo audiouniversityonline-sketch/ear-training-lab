@@ -715,6 +715,11 @@
     // Free build: served as lab.html?free=1 (paid build is plain lab.html, unaffected).
     // Free = limited EQ (Practice + Learn; the guided course is members-only) and no Compression.
     const IS_FREE = (typeof window !== "undefined") && (window.AU_FREE === true || (function () { try { return new URLSearchParams(window.location.search).get("free") === "1"; } catch (e) { return false; } })());
+    // Preview mode: ?preview=1 turns off the level entry gate and week drip so
+    // curriculum can be tested end to end. STAGING ONLY by construction: the flag
+    // requires "staging" in the path, so lab.html?preview=1 does nothing for
+    // members even though production ships this same code.
+    const PREVIEW_UNLOCK = (typeof window !== "undefined") && /staging/i.test(window.location.pathname) && (function () { try { return new URLSearchParams(window.location.search).get("preview") === "1"; } catch (e) { return false; } })();
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/membership";
     // Kit (account upbeat-creator-1556, form uid e6cf75d3ed). We post to the public
@@ -2815,6 +2820,103 @@
       return progress?.levels?.[levelId] || {};
     }
 
+    /*
+     * Drip unlocks — levels that carry an `unlock` rule in the curriculum
+     * (e.g. Level 2: { completionsPerWeek: 3, minDaysBetweenWeeks: 7 }) release
+     * their weeks progressively, mimicking the original course cadence:
+     * the next week opens only after every task in the current week has been
+     * RUN the required number of times AND at least minDaysBetweenWeeks have
+     * passed since the current week unlocked. Levels without a rule (Foundations)
+     * stay fully open. Unlock timestamps persist per device in STORAGE.
+     */
+    const WEEK_UNLOCKS_KEY = "eqWeekUnlocks";   // { [levelId]: { [weekNum]: epochMs } }
+
+    // Runs completed for a week = the minimum run count across its tasks.
+    // Entries written before run-counting existed count as one run if completed.
+    function weekRunsDone(levelProgress, weekPlan) {
+      if (!weekPlan || !weekPlan.tasks || weekPlan.tasks.length === 0) return 0;
+      return Math.min(...weekPlan.tasks.map((_, i) => {
+        const e = readProgress(levelProgress[weekPlan.week]?.[i]);
+        if (!e) return 0;
+        if (typeof e.count === 'number') return e.count;
+        return e.completed ? 1 : 0;
+      }));
+    }
+
+    // Pure read: unlock status for every week of a level.
+    function weekUnlockStatus(level, levelProgress) {
+      const out = {};
+      const weeks = (level && level.weeks) || [];
+      const rule = PREVIEW_UNLOCK ? null : (level && level.unlock);
+      if (!rule) { weeks.forEach(w => { out[w.week] = { unlocked: true }; }); return out; }
+      const stamps = (STORAGE.get(WEEK_UNLOCKS_KEY, {}) || {})[level.id] || {};
+      const need = rule.completionsPerWeek || 3;
+      const gapMs = (rule.minDaysBetweenWeeks || 7) * 86400000;
+      weeks.forEach((w, idx) => {
+        if (idx === 0 || stamps[w.week]) { out[w.week] = { unlocked: true }; return; }
+        const prev = weeks[idx - 1];
+        const runs = weekRunsDone(levelProgress, prev);
+        const runsLeft = Math.max(0, need - runs);
+        const prevStamp = stamps[prev.week];
+        const msLeft = prevStamp ? Math.max(0, prevStamp + gapMs - Date.now()) : gapMs;
+        const daysLeft = Math.max(1, Math.ceil(msLeft / 86400000));
+        const reason = runsLeft > 0
+          ? "Run each Level " + prev.week + " task " + need + " times. " + runs + " of " + need + " full runs so far."
+          : (msLeft > 0 ? "Opens " + daysLeft + (daysLeft === 1 ? " day" : " days") + " after Level " + prev.week + " unlocked." : "Opens on your next visit.");
+        out[w.week] = { unlocked: false, reason, runsLeft, msLeft };
+      });
+      return out;
+    }
+
+    // Stamp any weeks that just became eligible. Monotonic: stamps only get added.
+    // Returns true if something new unlocked (callers re-render on that).
+    function settleWeekUnlocks(level, levelProgress) {
+      if (PREVIEW_UNLOCK) return false;   // previewing must not start real unlock clocks
+      const rule = level && level.unlock;
+      if (!rule) return false;
+      const all = STORAGE.get(WEEK_UNLOCKS_KEY, {}) || {};
+      const stamps = { ...(all[level.id] || {}) };
+      const weeks = level.weeks || [];
+      const need = rule.completionsPerWeek || 3;
+      const gapMs = (rule.minDaysBetweenWeeks || 7) * 86400000;
+      let changed = false;
+      weeks.forEach((w, idx) => {
+        if (idx === 0) { if (!stamps[w.week]) { stamps[w.week] = Date.now(); changed = true; } return; }
+        if (stamps[w.week]) return;
+        const prev = weeks[idx - 1];
+        const ps = stamps[prev.week];
+        if (ps && (Date.now() - ps) >= gapMs && weekRunsDone(levelProgress, prev) >= need) {
+          stamps[w.week] = Date.now(); changed = true;
+        }
+      });
+      if (changed) STORAGE.set(WEEK_UNLOCKS_KEY, { ...all, [level.id]: stamps });
+      return changed;
+    }
+
+    /*
+     * Level entry gate: a level with `requiresLevel: N` opens only after EVERY
+     * task in level N is completed. Unlike the week drip INSIDE a level (real
+     * runs only), "Mark complete" DOES count here — members who did level 1
+     * before the app tracked progress backfill with it. Skipping level 1 is the
+     * thing this prevents; gaming the checkboxes only lands you in material the
+     * level 1 work exists to prepare you for.
+     */
+    function levelEntryStatus(level, progress) {
+      if (PREVIEW_UNLOCK) return { locked: false };
+      const reqId = level && level.requiresLevel;
+      if (!reqId) return { locked: false };
+      const prereq = (CURRICULUM.levels || []).find(l => l.id === reqId);
+      if (!prereq) return { locked: false };
+      const lp = getLevelProgress(progress, reqId);
+      let total = 0, done = 0;
+      (prereq.weeks || []).forEach(w => (w.tasks || []).forEach((_, i) => {
+        total += 1;
+        const e = readProgress(lp[w.week] ? lp[w.week][i] : null);
+        if (e && e.completed) done += 1;
+      }));
+      return { locked: done < total, done, total, remaining: total - done, prereqId: reqId, prereqName: prereq.name };
+    }
+
     function KeyboardHelpOverlay({ onClose }) {
       const rows = [
         { keys: ["Space"], label: "Play / Pause" },
@@ -3183,6 +3285,19 @@
 
       const levelProgress = getLevelProgress(progress, viewLevelId);
 
+      // Entry gate first: a prerequisite level must be fully complete before this
+      // level opens at all (and before its week-1 unlock clock starts ticking).
+      const entryGate = levelEntryStatus(activeLevel, progress);
+
+      // Drip unlocks: stamp newly-eligible weeks when the picker opens or progress
+      // changes, then read a status map for the week grid. No-op for open levels.
+      const [, setUnlockTick] = useState(0);
+      useEffect(() => {
+        if (!entryGate.locked && settleWeekUnlocks(activeLevel, levelProgress)) setUnlockTick(t => t + 1);
+      }, [viewLevelId, progress, entryGate.locked]);
+      const unlockMap = weekUnlockStatus(activeLevel, levelProgress);
+      const weekLocked = (weekNum) => { const u = unlockMap[weekNum]; return !!(u && !u.unlocked); };
+
       const weekIsComplete = (weekNum) => {
         const weekProgress = levelProgress[weekNum];
         if (!weekProgress) return false;
@@ -3195,7 +3310,7 @@
       };
 
       const levelPills = [
-        ...activeLevels.map(l => ({ id: l.id, name: l.name, locked: false })),
+        ...activeLevels.map(l => ({ id: l.id, name: l.name, locked: false, entryLocked: levelEntryStatus(l, progress).locked })),
         ...lockedLevels.map(l => ({ id: l.id, name: l.name, locked: true }))
       ];
 
@@ -3224,6 +3339,11 @@
 
             <div className={inline ? "" : "p-6"}>
 
+              {PREVIEW_UNLOCK && (
+                <div className="mb-4 px-3 py-2 border rule font-mono text-[10px] uppercase tracking-wider" style={{ color: "var(--amber)" }}>
+                  Preview mode: entry gate and weekly unlocks are off (staging only)
+                </div>
+              )}
               {levelPills.length > 1 && (
                 <div className="mb-6 flex flex-wrap gap-2">
                   {levelPills.map(pill => {
@@ -3243,7 +3363,7 @@
                           color: isActive ? '#0d0d0e' : 'var(--ink)'
                         }}
                       >
-                        {pill.locked && (
+                        {(pill.locked || pill.entryLocked) && (
                           <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
                             <rect x="2.5" y="5.5" width="7" height="5.5" rx="0.5" />
                             <path d="M4 5.5V3.5a2 2 0 014 0v2" />
@@ -3256,21 +3376,43 @@
                 </div>
               )}
 
+              {/* ========== ENTRY-GATED LEVEL: prerequisite not finished ========== */}
+              {!viewLevelLocked && activeLevel && entryGate.locked && (
+                <div className="border rule p-6 sm:p-8 text-center max-w-xl mx-auto">
+                  <div className="eyebrow mb-3">Locked</div>
+                  <div className="font-display font-semibold text-lg mb-2">Finish {entryGate.prereqName} first</div>
+                  <p className="text-sm text-mute leading-relaxed mb-2">
+                    {activeLevel.name} builds directly on {entryGate.prereqName}. Complete every exercise there to unlock it.
+                    If you finished some of this work before the app tracked progress, use "Mark complete" on those tasks.
+                  </p>
+                  <div className="font-mono text-xs text-mute mb-5">{entryGate.done} of {entryGate.total} exercises complete</div>
+                  <button className="btn btn-solid" onClick={() => { setViewLevelId(entryGate.prereqId); setViewLevelLocked(false); }}>
+                    Go to {entryGate.prereqName}
+                  </button>
+                </div>
+              )}
+
               {/* ========== ACTIVE LEVEL: WEEK GRID + TASK LIST ========== */}
-              {!viewLevelLocked && activeLevel && (
+              {!viewLevelLocked && activeLevel && !entryGate.locked && (
               <div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-8">
-                {weeks.map(w => (
+                {weeks.map(w => {
+                  const locked = weekLocked(w.week);
+                  return (
                   <button
                     key={w.week}
                     className={`week-card ${selectedWeek === w.week ? 'active' : ''} ${weekIsComplete(w.week) ? 'complete' : ''}`}
-                    onClick={() => setSelectedWeek(w.week)}
+                    onClick={() => { if (!locked) setSelectedWeek(w.week); }}
+                    disabled={locked}
+                    style={locked ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
+                    title={locked ? unlockMap[w.week].reason : undefined}
                   >
-                    <div className="num">Level {w.week}</div>
+                    <div className="num">Level {w.week}{locked ? ' · Locked' : ''}</div>
                     <div className="title">{w.lessonTitle}</div>
-                    <div className="meta">{w.tasks.length} tasks</div>
+                    <div className="meta">{locked ? unlockMap[w.week].reason : (w.tasks.length + " tasks")}</div>
                   </button>
-                ))}
+                  );
+                })}
               </div>
 
               {weekPlan && (
@@ -3299,6 +3441,7 @@
                           {/* Main row — click to load task */}
                           <button
                             onClick={() => {
+                              if (weekLocked(weekPlan.week)) return;   // drip: locked weeks can't start
                               onSelectLevel(viewLevelId);
                               onSelectWeek(weekPlan.week);
                               onSelectTask(i);
@@ -3619,7 +3762,7 @@
 
       /* Per-week progress persisted to localStorage: { [weekNum]: { [taskIdx]: accuracy } } */
       const [progress, setProgress] = useState(() => migrateProgress(STORAGE.get("earTrainingProgress", {})));
-      const [currentLevelId, setCurrentLevelId] = useState(() => CURRICULUM.levels?.[0]?.id ?? 1);
+      const [currentLevelId, setCurrentLevelId] = useState(() => STORAGE.get("currentLevelId", null) ?? (CURRICULUM.levels?.[0]?.id ?? 1));
 
       /* Mobile settings drawer */
       const [showDrawer, setShowDrawer] = useState(false);
@@ -3652,7 +3795,14 @@
         setListenCh(channel);
       };
 
-      const getWeekPlan = (n) => CURRICULUM.weeks.find(w => w.week === n);
+      // Week lookup must respect the selected level — CURRICULUM.weeks is a legacy
+      // alias for level 1 only, and using it here made every level play level 1's
+      // tasks (the "Advanced week 1 was all peaks" bug).
+      const getWeekPlan = (n) => {
+        const lv = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+        const weeks = (lv && lv.weeks) || CURRICULUM.weeks || [];
+        return weeks.find(w => w.week === n);
+      };
       const getCurrentTask = () => {
         const wp = getWeekPlan(curriculumWeek);
         return wp ? wp.tasks[curriculumTaskIndex] : null;
@@ -3665,6 +3815,14 @@
         }
         const nextWeekPlan = getWeekPlan(curriculumWeek + 1);
         if (nextWeekPlan && nextWeekPlan.tasks.length > 0) {
+          // Drip levels: never auto-advance into a week that hasn't unlocked yet.
+          const lv = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+          if (lv && lv.unlock) {
+            const lp = getLevelProgress(progress, currentLevelId);
+            settleWeekUnlocks(lv, lp);
+            const st = weekUnlockStatus(lv, lp);
+            if (st[nextWeekPlan.week] && !st[nextWeekPlan.week].unlocked) return null;
+          }
           return { week: curriculumWeek + 1, taskIndex: 0, task: nextWeekPlan.tasks[0] };
         }
         return null;
@@ -3688,7 +3846,9 @@
                 ...levelData,
                 [week]: {
                   ...(levelData[week] || {}),
-                  [taskIdx]: { ...existingObj, completed: true, score: accuracy }
+                  // count = real full runs of this task (drip unlocks read it).
+                  // Manual "mark complete" deliberately does NOT increment it.
+                  [taskIdx]: { ...existingObj, completed: true, score: accuracy, count: (typeof existingObj.count === 'number' ? existingObj.count : (existingObj.completed ? 1 : 0)) + 1 }
                 }
               }
             }
@@ -4341,6 +4501,19 @@
       // Set-match: every guess filter must correspond (in any order) to a unique actual
       // filter on (freq, direction, gainDb). For RTF, the user's answer direction must be
       // the inverse of the question direction.
+      // Slots whose direction/gain pickers were hidden carry nulls — fill in the
+      // single possible value before grading (same rule as the slot writer). A
+      // null that had a real choice (direction in "both" mode, gain with multiple
+      // options) stays null and correctly grades wrong.
+      const normalizeSlotGuesses = (guesses, isRTF) => (guesses || []).map(g => ({
+        ...g,
+        direction: g.direction != null ? g.direction
+          : (eqMode !== "both" ? (isRTF ? (eqMode === "boost" ? "cut" : "boost") : eqMode) : null),
+        gainDb: g.gainDb != null ? g.gainDb
+          : ((gainOptions && gainOptions.length === 1) ? gainOptions[0]
+            : ((!gainOptions || gainOptions.length === 0) ? gainDb : null))
+      }));
+
       const evaluateMultiFilter = (guesses, actuals, isRTF) => {
         if (!Array.isArray(guesses) || !Array.isArray(actuals)) return false;
         if (guesses.length !== actuals.length) return false;
@@ -4369,7 +4542,7 @@
           const isRTF = isReturnToFlatMode(mode);
           // For Identify the user picks via guessFilters; for Matching/RTF via answerFilters.
           const guesses = mode === "Identify" ? guessFilters : answerFilters;
-          return evaluateMultiFilter(guesses, round.filters, isRTF);
+          return evaluateMultiFilter(normalizeSlotGuesses(guesses, isRTF), round.filters, isRTF);
         }
 
         // Single-filter rounds — existing logic.
@@ -4685,20 +4858,47 @@
         setTimeout(() => newRound(), 50);
       }, [mode]);
 
-      // When week/task changes OR audio just became ready, load the current task
+      // When level/week/task changes OR audio just became ready, load the current task.
+      // currentLevelId MUST be a dependency: switching level while staying on the same
+      // week/task number otherwise kept the previous level's task spec loaded (the
+      // "Advanced W1-T1 played level 1's all-boosts task" bug).
       useEffect(() => {
+        STORAGE.set("currentLevelId", currentLevelId);
         STORAGE.set("curriculumWeek", curriculumWeek);
         STORAGE.set("curriculumTaskIndex", curriculumTaskIndex);
         if (!audioReady) return;
         // Free build: the guided course is members-only, so start free users in Custom
         // Practice (free-form, doesn't touch course progression) instead of a course task.
         if (IS_FREE && !isManualSession && !isLearnMode) { startManualSession(manualConfig); return; }
+        // Entry-gated levels: if restored state points at a level whose
+        // prerequisite isn't finished, snap back to the prerequisite level.
+        const lvGate = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+        const entry = levelEntryStatus(lvGate, progress);
+        if (entry.locked) {
+          setCurrentLevelId(entry.prereqId);
+          setCurriculumTaskIndex(0);
+          return;   // effect re-runs on the prerequisite level
+        }
+        // Drip levels: if restored/steered state points into a locked week, snap
+        // back to the highest unlocked week instead of loading a gated task.
+        const lv = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+        if (lv && lv.unlock) {
+          const lp = getLevelProgress(progress, currentLevelId);
+          settleWeekUnlocks(lv, lp);
+          const st = weekUnlockStatus(lv, lp);
+          if (st[curriculumWeek] && !st[curriculumWeek].unlocked) {
+            const open = (lv.weeks || []).filter(w => st[w.week] && st[w.week].unlocked).map(w => w.week);
+            setCurriculumWeek(open.length ? Math.max(...open) : 1);
+            setCurriculumTaskIndex(0);
+            return;   // effect re-runs with the corrected week
+          }
+        }
         const task = getCurrentTask();
         if (task) {
           modeChangeSourceRef.current = 'internal';
           applyTaskSpec(task);
         }
-      }, [curriculumWeek, curriculumTaskIndex, audioReady]);
+      }, [currentLevelId, curriculumWeek, curriculumTaskIndex, audioReady]);
 
       // Keyboard shortcuts state
       const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
@@ -4828,6 +5028,8 @@
 
       /* ---------- Derived values for rendering ---------- */
       const currentTask = getCurrentTask();
+      // Preview-only debug handle for testing gated content (inert in production).
+      if (PREVIEW_UNLOCK && typeof window !== "undefined") { window.__eqDebug = { round, answerFilters, guessFilters, mode, eqMode, gainDb, filterCount }; }
       const weekPlan = getWeekPlan(curriculumWeek);
       const nextTaskExists = getNextTask() !== null;
       const isCorrect = showAnswer && evaluateCorrectness();
@@ -5046,6 +5248,25 @@
                   </section>
                 )}
 
+                {/* Session context — which level/task this is and what to listen for.
+                    Members asked for this: without it you can't tell mid-practice whether
+                    the exercise is peaks, dips, or both. Shown for curriculum and manual
+                    sessions alike; center stage so mobile gets it too. */}
+                {round && !isLearnMode && (
+                  <section className="mb-4">
+                    <div className="font-mono text-[10px] uppercase tracking-wider text-mute">
+                      {!isManualSession && currentTask
+                        ? ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " — " + currentTask.name : "")
+                        : "Custom Practice"}
+                    </div>
+                    <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: "var(--accent-ink)" }}>
+                      {"Listen for: " + (eqMode === "both" ? "peaks and dips" : eqMode === "cut" ? "dips (cuts)" : "peaks (boosts)")
+                        + " · " + ((gainOptions && gainOptions.length > 1) ? gainOptions.map(g => g + " dB").join(" or ") : gainDb + " dB")
+                        + (filterCount > 1 ? " · " + filterCount + " bands at once" : "")}
+                    </div>
+                  </section>
+                )}
+
                 {/* Guidance for current round */}
                 {round && !showAnswer && (
                   <section className="mb-6 fade-up">
@@ -5079,7 +5300,7 @@
                             {round.filters.map((af, i) => {
                               const isRTF = isReturnToFlatMode(mode);
                               const expectedDir = isRTF ? (af.direction === "boost" ? "cut" : "boost") : af.direction;
-                              const guesses = mode === "Identify" ? guessFilters : answerFilters;
+                              const guesses = normalizeSlotGuesses(mode === "Identify" ? guessFilters : answerFilters, isRTF);
                               // Find the user's pick that matches this actual filter
                               const matchedGuess = (guesses || []).find(g =>
                                 g.freq === af.freq && g.gainDb === af.gainDb && g.direction === expectedDir
@@ -5219,18 +5440,28 @@
                       const slots = isIdentify ? guessFilters : answerFilters;
                       const setSlots = isIdentify ? setGuessFilters : setAnswerFilters;
                       const slot = slots && slots[slotIdx] ? slots[slotIdx] : { freq: null, direction: null, gainDb: null };
-                      const updateSlot = (patch) => {
-                        if (!slots) return;
-                        const next = slots.map((s, i) => i === slotIdx ? { ...s, ...patch } : s);
-                        setSlots(next);
-                        if (!isIdentify) setAnswerTouched(true);
-                      };
                       // Other slots' picked freqs are unavailable (must be distinct)
                       const otherFreqs = slots
                         ? slots.map((s, i) => i !== slotIdx ? s.freq : null).filter(f => f != null)
                         : [];
                       const showDirection = (gainOptions && gainOptions.length > 0) || eqMode === "both";
                       const showGain = gainOptions && gainOptions.length > 1;
+                      const updateSlot = (patch) => {
+                        if (!slots) return;
+                        const fill = { ...patch };
+                        // When a picker is hidden there is exactly one possible value —
+                        // fill it in, or the slot submits nulls and can never grade
+                        // correct (the "multi-band always wrong" bug).
+                        if (!showDirection && fill.direction == null) {
+                          fill.direction = isReturnToFlatMode(mode) ? (eqMode === "boost" ? "cut" : "boost") : eqMode;
+                        }
+                        if (!showGain && fill.gainDb == null) {
+                          fill.gainDb = (gainOptions && gainOptions.length === 1) ? gainOptions[0] : gainDb;
+                        }
+                        const next = slots.map((s, i) => i === slotIdx ? { ...s, ...fill } : s);
+                        setSlots(next);
+                        if (!isIdentify) setAnswerTouched(true);
+                      };
                       return (
                         <div key={slotIdx} className="card p-4 sm:p-5" style={{ borderColor: 'var(--rule)' }}>
                           <div className="flex items-baseline justify-between mb-3">
