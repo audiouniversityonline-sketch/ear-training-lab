@@ -1110,7 +1110,8 @@
             }
           ]
         }
-      ]
+      ],
+      "requiresLevel": 1
     }
   ],
   "lockedLevels": []

@@ -2890,6 +2890,29 @@
       return changed;
     }
 
+    /*
+     * Level entry gate: a level with `requiresLevel: N` opens only after EVERY
+     * task in level N is completed. Unlike the week drip INSIDE a level (real
+     * runs only), "Mark complete" DOES count here — members who did level 1
+     * before the app tracked progress backfill with it. Skipping level 1 is the
+     * thing this prevents; gaming the checkboxes only lands you in material the
+     * level 1 work exists to prepare you for.
+     */
+    function levelEntryStatus(level, progress) {
+      const reqId = level && level.requiresLevel;
+      if (!reqId) return { locked: false };
+      const prereq = (CURRICULUM.levels || []).find(l => l.id === reqId);
+      if (!prereq) return { locked: false };
+      const lp = getLevelProgress(progress, reqId);
+      let total = 0, done = 0;
+      (prereq.weeks || []).forEach(w => (w.tasks || []).forEach((_, i) => {
+        total += 1;
+        const e = readProgress(lp[w.week] ? lp[w.week][i] : null);
+        if (e && e.completed) done += 1;
+      }));
+      return { locked: done < total, done, total, remaining: total - done, prereqId: reqId, prereqName: prereq.name };
+    }
+
     function KeyboardHelpOverlay({ onClose }) {
       const rows = [
         { keys: ["Space"], label: "Play / Pause" },
@@ -3258,12 +3281,16 @@
 
       const levelProgress = getLevelProgress(progress, viewLevelId);
 
+      // Entry gate first: a prerequisite level must be fully complete before this
+      // level opens at all (and before its week-1 unlock clock starts ticking).
+      const entryGate = levelEntryStatus(activeLevel, progress);
+
       // Drip unlocks: stamp newly-eligible weeks when the picker opens or progress
       // changes, then read a status map for the week grid. No-op for open levels.
       const [, setUnlockTick] = useState(0);
       useEffect(() => {
-        if (settleWeekUnlocks(activeLevel, levelProgress)) setUnlockTick(t => t + 1);
-      }, [viewLevelId, progress]);
+        if (!entryGate.locked && settleWeekUnlocks(activeLevel, levelProgress)) setUnlockTick(t => t + 1);
+      }, [viewLevelId, progress, entryGate.locked]);
       const unlockMap = weekUnlockStatus(activeLevel, levelProgress);
       const weekLocked = (weekNum) => { const u = unlockMap[weekNum]; return !!(u && !u.unlocked); };
 
@@ -3279,7 +3306,7 @@
       };
 
       const levelPills = [
-        ...activeLevels.map(l => ({ id: l.id, name: l.name, locked: false })),
+        ...activeLevels.map(l => ({ id: l.id, name: l.name, locked: false, entryLocked: levelEntryStatus(l, progress).locked })),
         ...lockedLevels.map(l => ({ id: l.id, name: l.name, locked: true }))
       ];
 
@@ -3327,7 +3354,7 @@
                           color: isActive ? '#0d0d0e' : 'var(--ink)'
                         }}
                       >
-                        {pill.locked && (
+                        {(pill.locked || pill.entryLocked) && (
                           <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.4" aria-hidden="true">
                             <rect x="2.5" y="5.5" width="7" height="5.5" rx="0.5" />
                             <path d="M4 5.5V3.5a2 2 0 014 0v2" />
@@ -3340,8 +3367,24 @@
                 </div>
               )}
 
+              {/* ========== ENTRY-GATED LEVEL: prerequisite not finished ========== */}
+              {!viewLevelLocked && activeLevel && entryGate.locked && (
+                <div className="border rule p-6 sm:p-8 text-center max-w-xl mx-auto">
+                  <div className="eyebrow mb-3">Locked</div>
+                  <div className="font-display font-semibold text-lg mb-2">Finish {entryGate.prereqName} first</div>
+                  <p className="text-sm text-mute leading-relaxed mb-2">
+                    {activeLevel.name} builds directly on {entryGate.prereqName}. Complete every exercise there to unlock it.
+                    If you finished some of this work before the app tracked progress, use "Mark complete" on those tasks.
+                  </p>
+                  <div className="font-mono text-xs text-mute mb-5">{entryGate.done} of {entryGate.total} exercises complete</div>
+                  <button className="btn btn-solid" onClick={() => { setViewLevelId(entryGate.prereqId); setViewLevelLocked(false); }}>
+                    Go to {entryGate.prereqName}
+                  </button>
+                </div>
+              )}
+
               {/* ========== ACTIVE LEVEL: WEEK GRID + TASK LIST ========== */}
-              {!viewLevelLocked && activeLevel && (
+              {!viewLevelLocked && activeLevel && !entryGate.locked && (
               <div>
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-8">
                 {weeks.map(w => {
@@ -4805,6 +4848,15 @@
         // Free build: the guided course is members-only, so start free users in Custom
         // Practice (free-form, doesn't touch course progression) instead of a course task.
         if (IS_FREE && !isManualSession && !isLearnMode) { startManualSession(manualConfig); return; }
+        // Entry-gated levels: if restored state points at a level whose
+        // prerequisite isn't finished, snap back to the prerequisite level.
+        const lvGate = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+        const entry = levelEntryStatus(lvGate, progress);
+        if (entry.locked) {
+          setCurrentLevelId(entry.prereqId);
+          setCurriculumTaskIndex(0);
+          return;   // effect re-runs on the prerequisite level
+        }
         // Drip levels: if restored/steered state points into a locked week, snap
         // back to the highest unlocked week instead of loading a gated task.
         const lv = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
