@@ -1118,6 +1118,77 @@
         </div>
       );
     }
+    // ---- Skill stats: per-skill accuracy + daily practice history (localStorage) ----
+    // Shared by both modules. EQ records per octave band (third-octave answers are
+    // bucketed to the nearest octave band); Compression records per control plus
+    // detect. Day counts power the practice streak. All-time counters; ~1 KB.
+    const SKILL_KEY = "au_skill_stats_v1";
+    const skillLoad = () => { try { const v = JSON.parse(localStorage.getItem(SKILL_KEY) || "{}") || {}; return { eq: v.eq || {}, comp: v.comp || {}, days: v.days || {} }; } catch (e) { return { eq: {}, comp: {}, days: {} }; } };
+    const skillSave = (d) => { try { localStorage.setItem(SKILL_KEY, JSON.stringify(d)); } catch (e) {} };
+    const skillToday = () => { const n = new Date(); return n.getFullYear() + "-" + String(n.getMonth() + 1).padStart(2, "0") + "-" + String(n.getDate()).padStart(2, "0"); };
+    const SkillStats = {
+      record(module, key, correct) {
+        const d = skillLoad(); const m = d[module]; const s = m[key] || { c: 0, t: 0 };
+        s.t += 1; if (correct) s.c += 1; m[key] = s; skillSave(d);
+      },
+      bumpDay() {
+        const d = skillLoad(); const day = skillToday();
+        d.days[day] = (d.days[day] || 0) + 1;
+        const keys = Object.keys(d.days); if (keys.length > 400) { keys.sort(); keys.slice(0, keys.length - 400).forEach(k => delete d.days[k]); }
+        skillSave(d);
+      },
+      data() { return skillLoad(); },
+    };
+    // Current streak: consecutive days practiced, ending today or yesterday.
+    function skillStreak(days) {
+      let n = 0; const d = new Date();
+      const iso = (x) => x.getFullYear() + "-" + String(x.getMonth() + 1).padStart(2, "0") + "-" + String(x.getDate()).padStart(2, "0");
+      if (!days[iso(d)]) d.setDate(d.getDate() - 1);   // a miss today doesn't break yesterday's streak
+      while (days[iso(d)]) { n += 1; d.setDate(d.getDate() - 1); }
+      return n;
+    }
+    const OCTAVES9 = [63, 125, 250, 500, 1000, 2000, 4000, 8000, 16000];
+    function nearestOctave(f) { let best = OCTAVES9[0], bd = Infinity; for (const b of OCTAVES9) { const d = Math.abs(Math.log2(f / b)); if (d < bd) { bd = d; best = b; } } return best; }
+    // The weakest keys by accuracy, among keys with enough attempts to be meaningful.
+    function weakestKeys(stats, keys, minAttempts, n) {
+      const eligible = keys.filter(k => (stats[k] ? stats[k].t : 0) >= minAttempts);
+      eligible.sort((a, b) => (stats[a].c / stats[a].t) - (stats[b].c / stats[b].t));
+      return eligible.slice(0, n);
+    }
+    // Right-rail progress card: all-time accuracy per skill + streak + weak-spot button.
+    function ProgressPanel({ module, keys, labelFor, minAttempts, weakCount, weakKeys: weakPool, onWeakSpots, weakLabel, disabled }) {
+      const d = SkillStats.data(); const stats = d[module]; const days = d.days;
+      const streakDays = skillStreak(days); const today = days[skillToday()] || 0;
+      const total = keys.reduce((s, k) => s + (stats[k] ? stats[k].t : 0), 0);
+      const weak = weakestKeys(stats, weakPool || keys, minAttempts, weakCount || 2);
+      const ready = weak.length >= 1 && total >= minAttempts * 2;
+      return (
+        <section className="card p-5 sm:p-6">
+          <div className="flex items-center justify-between mb-1"><div className="eyebrow">Progress</div><div className="font-mono text-[10px] text-mute">{total} answered</div></div>
+          <div className="font-mono text-[10px] text-mute mb-4">{streakDays > 0 ? ("Streak " + streakDays + (streakDays === 1 ? " day" : " days") + " · ") : ""}Today {today}</div>
+          <div className="flex flex-col gap-2">
+            {keys.map(k => {
+              const s = stats[k] || { c: 0, t: 0 }; const has = s.t >= minAttempts; const pct = s.t > 0 ? Math.round((s.c / s.t) * 100) : 0;
+              return (
+                <div key={k} className="flex items-center gap-2" aria-label={labelFor(k) + ": " + (has ? pct + " percent over " + s.t + " answers" : "not enough answers yet")}>
+                  <span className="font-mono text-[10px]" style={{ width: 52, color: has ? "var(--ink-2)" : "var(--ink-3)", flexShrink: 0 }}>{labelFor(k)}</span>
+                  <span style={{ flex: 1, height: 5, background: "var(--panel-3)", borderRadius: 1, position: "relative", overflow: "hidden" }}>
+                    {s.t > 0 && <span style={{ position: "absolute", inset: 0, width: pct + "%", background: has ? "var(--accent)" : "var(--line-2)" }}></span>}
+                  </span>
+                  <span className="font-mono text-[10px]" style={{ width: 56, textAlign: "right", color: has ? "var(--ink-2)" : "var(--ink-3)", flexShrink: 0 }}>{s.t > 0 ? pct + "% · " + s.t : "—"}</span>
+                </div>
+              );
+            })}
+          </div>
+          {onWeakSpots && (
+            <>
+              <button className="btn btn-ghost w-full mt-4" onClick={() => onWeakSpots(weak)} disabled={disabled || !ready}>{weakLabel || "Practice weak spots"}</button>
+              {!ready && <p className="text-[10px] font-mono text-mute mt-2 leading-relaxed">Unlocks once you have answered enough rounds to show where to focus.</p>}
+            </>
+          )}
+        </section>
+      );
+    }
     // Free build: newsletter signup popup (shown once, after a short session).
     // Our own styled field; submits straight to Kit's form endpoint (no embedded Kit form).
     function NewsletterModal({ onClose }) {
@@ -1712,6 +1783,7 @@
       const recordResult = (correct) => {
         liveNonceRef.current++;
         setLiveMsg((correct ? "Correct" : "Not quite") + (liveNonceRef.current % 2 ? " " : ""));
+        try { SkillStats.bumpDay(); } catch (e) {}
         setSessionTotal(t => t + 1);
         if (correct) { setSessionCorrect(c => c + 1); setStreak(s => { const n = s + 1; setBestStreak(b => Math.max(b, n)); return n; }); } else setStreak(0);
         if (area === "levels" && activeLevel) { setLevelAnswered(a => a + 1); if (correct) setLevelCorrect(c => c + 1); }
@@ -1721,6 +1793,7 @@
         if (isLearn || !round || showAnswer || building || round.mode === "match") return;
         const correct = key === round.answer;
         setSelected(key); setShowAnswer(true); setLastCorrect(correct);
+        try { SkillStats.record("comp", round.mode === "detect" ? "detect" : (round.detail.control || round.detail.param), correct); } catch (e) {}
         recordResult(correct);
       };
 
@@ -1741,6 +1814,7 @@
             results[c] = { value, target, within, tight }; if (!within) allWithin = false; if (!tight) allTight = false;
           });
           setMatchResult({ combine: true, results, within: allWithin, tight: allTight }); setSelected("done"); setShowAnswer(true); setLastCorrect(allWithin);
+          try { round.controls.forEach(c => SkillStats.record("comp", c, results[c].within)); } catch (e) {}
           recordResult(allWithin);
           return;
         }
@@ -1748,6 +1822,7 @@
         if (round.stepped) { value = round.notches[matchIndex]; target = round.notches[round.targetIndex]; const diff = Math.abs(matchIndex - round.targetIndex); within = round.steps <= 2 ? diff === 0 : diff <= 1; tight = diff === 0; }
         else { value = ctrlValueAt(round.control, matchPos); target = round.target; const spec = MATCH_TOL[round.control]; if (spec.type === "lin") { const err = Math.abs(value - target); within = err <= round.tol; tight = err <= round.tol * 0.5; } else { const f = Math.max(value / target, target / value); within = f <= round.tol; tight = f <= 1 + (round.tol - 1) * 0.5; } }
         setMatchResult({ value, target, within, tight }); setSelected("done"); setShowAnswer(true); setLastCorrect(within);
+        try { SkillStats.record("comp", round.control, within); } catch (e) {}
         recordResult(within);
         try { const buf = srcBufRef.current, mk = round.stepped ? round.lookup[matchIndex].makeup : interpMakeup(round.lookup, matchPos); const tmk = round.stepped ? round.lookup[round.targetIndex].makeup : round.makeupTarget; const wetY = await renderWet(buf, { ...BASE, [round.control]: value }); const envY = envelopeOf(wetY, ENV_POINTS, mk); setMatchScope({ envA: round.envTarget, envB: envY, makeupA: tmk, makeupB: mk, envMax: Math.max(maxOf(round.envTarget), maxOf(envY)) }); } catch (e) {}
       };
@@ -1762,6 +1837,7 @@
         const r = rankOrder.map(ch => correctPos[ch]);
         let inv = 0; for (let i = 0; i < r.length; i++) for (let j = i + 1; j < r.length; j++) if (r[i] > r[j]) inv++;
         const exact = inv === 0, close = inv === 1, within = exact || close;
+        try { SkillStats.record("comp", round.control, within); } catch (e) {}
         setRankResult({ exact, close }); setShowAnswer(true); setLastCorrect(within); recordResult(within);
       };
 
@@ -1806,6 +1882,14 @@
       const clearLevel = () => { levelCfgRef.current = null; setActiveLevel(null); setLevelResult(null); };
       const enterLearn = () => { setArea("learn"); clearLevel(); setShowAnswer(false); startLearn(); };
       const goPractice = () => { setArea("practice"); clearLevel(); newRound(mode); };
+      // Weak-spot practice: point the Compare pool at the lowest-accuracy controls.
+      const practiceWeakSpots = (weak) => {
+        if (!weak || !weak.length) return;
+        clearLevel(); setArea("practice");
+        const next = { ...configRef.current, practicePool: weak };
+        configRef.current = next; setConfig(next);
+        setMode("compare"); newRound("compare");
+      };
       const goLevels = () => { setArea("levels"); clearLevel(); setShowAnswer(false); };
 
       /* ----- config / sources ----- */
@@ -2167,6 +2251,9 @@
                     <div className="mt-5 accuracy-block"><div className="flex items-center justify-between mb-2"><div className="eyebrow">Accuracy</div><div className="font-mono text-[10px] text-mute">{percent(sessionCorrect, sessionTotal)}</div></div><AccuracyMeter value={sessionPct} /></div>
                   </section>
                 )}
+                {!isLearn && !inLevelMenu && (
+                  <ProgressPanel module="comp" keys={["detect", "threshold", "ratio", "attack", "release"]} labelFor={CAP} minAttempts={8} weakCount={2} weakKeys={["threshold", "ratio", "attack", "release"]} onWeakSpots={practiceWeakSpots} weakLabel="Practice weak spots" disabled={!audioReady} />
+                )}
                 {!inLevelMenu && (<section className="card p-5 sm:p-6 reveal-only"><GrMeter nodesRef={nodesRef} active={isPlaying && showVisuals} three={round && round.mode === "rank"} /><p className="text-[10px] font-mono text-mute mt-3 leading-relaxed">{showVisuals ? "Live, side by side. The taller bar is compressed harder." : "Revealed with the answer."}</p></section>)}
                 {!inLevelMenu && (<section className="pt-2 kbd-hints"><div className="flex flex-col gap-2 text-xs font-mono text-mute"><div><kbd className="border rule px-1.5 py-0.5">Space</kbd> Play / Pause</div><div><kbd className="border rule px-1.5 py-0.5">A</kbd> <kbd className="border rule px-1.5 py-0.5">B</kbd> Channel</div><div><kbd className="border rule px-1.5 py-0.5">Enter</kbd> Submit / Next</div></div></section>)}
               </aside>
@@ -2466,7 +2553,7 @@
       250:   { kind: "vowel",     label: "oo" },
       500:   { kind: "vowel",     label: "oh" },     // best-guess vowel — confirm with Kyle
       1000:  { kind: "vowel",     label: "ah" },
-      2000:  { kind: "vowel",     label: "eh" },     // best-guess vowel — confirm with Kyle
+      2000:  { kind: "vowel",     label: "ae" },     // confirmed by Kyle 2026-07-13
       4000:  { kind: "vowel",     label: "ee" },
       8000:  { kind: "sibilance", label: "sss" },
       16000: { kind: "sibilance", label: "sss-t" },
@@ -4309,6 +4396,11 @@
         const hasRound = !!(round && (round.freq || (Array.isArray(round.filters) && round.filters.length > 0)));
         if (!hasRound) return;
         const correct = isTimeout ? false : evaluateCorrectness();
+        try {
+          SkillStats.bumpDay();
+          if (Array.isArray(round.filters) && round.filters.length > 1) round.filters.forEach(f => SkillStats.record("eq", String(nearestOctave(f.freq)), correct));
+          else if (round.freq) SkillStats.record("eq", String(nearestOctave(round.freq)), correct);
+        } catch (e) {}
         liveNonceRef.current++;
         setLiveMsg((isTimeout ? "Time up" : (correct ? "Correct" : "Not quite")) + (liveNonceRef.current % 2 ? " " : ""));
         const nextQ = qInRound + 1;
@@ -4425,6 +4517,22 @@
         setShowManualSetup(false);
         setShowCurriculum(false);
         setTimeout(() => applyTaskSpec(task), 50);
+      };
+
+      // Weak-spot practice: a short Identify session drawn from the lowest-accuracy bands.
+      const practiceWeakBands = (weak) => {
+        if (!weak || !weak.length) return;
+        const pool = weak.map(Number);
+        startManualSession({
+          ...manualConfig,
+          mode: "Identify",
+          freqPool: pool.length >= 2 ? pool : [...pool, ...OCTAVE_BANDS.filter(f => !pool.includes(f)).slice(0, 1)],
+          resolution: "octaves",
+          filterCount: 1,
+          rounds: 10,
+          gainOptions: null,
+          timeLimitSec: 0
+        });
       };
 
       /*
@@ -5365,6 +5473,9 @@
                     <AccuracyMeter value={sessionTotal > 0 ? sessionCorrect / sessionTotal : 0} />
                   </div>
                 </section>
+                )}
+                {!isLearnMode && (
+                <ProgressPanel module="eq" keys={OCTAVE_BANDS.map(String)} labelFor={(k) => bandLabel(Number(k))} minAttempts={6} weakCount={3} onWeakSpots={practiceWeakBands} weakLabel="Practice weak bands" disabled={!audioReady} />
                 )}
 
                 {/* Keyboard shortcuts hint (desktop only; CSS hides on mobile) */}
