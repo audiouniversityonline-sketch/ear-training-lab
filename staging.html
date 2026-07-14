@@ -723,7 +723,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.11";
+    const APP_VERSION = "v2.12";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -1315,13 +1315,17 @@
       return (<div className="seg flex-wrap" role="group">{options.map(o => { const on = set.includes(o.value); return (<button key={String(o.value)} className={on ? "active" : ""} aria-pressed={on} onClick={() => toggle(o.value)} disabled={disabled}>{o.label}</button>); })}</div>);
     }
 
-    function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
+    function AudioUnlockOverlay({ onUnlock, onUnlockFresh, isLoading, error }) {
       return (
         <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
           <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div></div>
           <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Learn to hear what a compressor does to a sound. Every question has a clear right answer. Both channels are set to the same loudness, so you can't answer by volume alone. Use headphones or studio monitors for the best results.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
-          <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Start"}</button>
+          <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Continue from your last session →"}</button>
+          {onUnlockFresh && (
+            <button className="btn btn-ghost w-full mt-3" onClick={onUnlockFresh} disabled={isLoading}>Start a fresh practice</button>
+          )}
+          <p className="text-xs mt-5 text-mute leading-relaxed">Switch between EQ and Compression anytime, or open Levels, Practice, and Learn from the top bar.</p>
         </div></div>
       );
     }
@@ -2017,7 +2021,7 @@
       return (
         <div className="min-h-screen flex flex-col">
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
-          {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay onUnlock={unlock} isLoading={audioLoading} error={audioError} />}
+          {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay onUnlock={unlock} onUnlockFresh={() => { setArea("practice"); unlock(); }} isLoading={audioLoading} error={audioError} />}
           {showTour && <Walkthrough steps={compTourSteps(mode, isLearn)} onClose={() => setShowTour(false)} />}
 
           <header className="border-b rule">
@@ -2690,7 +2694,16 @@
        AUDIO UNLOCK OVERLAY
        ============================================================ */
 
-    function AudioUnlockOverlay({ onUnlock, isLoading, error }) {
+    function AudioUnlockOverlay({ onUnlock, onUnlockFresh, isLoading, error }) {
+      // Members get a small home screen: resume the course or jump straight into
+      // Custom Practice. Either click doubles as the browser's audio-enable gesture.
+      let lastSpot = null, hasHistory = false;
+      if (!IS_FREE) {
+        try {
+          lastSpot = window.localStorage.getItem("etl:lastSpot");
+          hasHistory = !!lastSpot || STORAGE.get("curriculumWeek", null) !== null;
+        } catch (e) {}
+      }
       return (
         <div className="overlay">
           <div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: '1px solid var(--rule)' }}>
@@ -2711,6 +2724,29 @@
                   <div className="w-4 h-4 border-2 border-ink border-t-transparent rounded-full animate-spin"></div>
                   <span className="text-xs font-mono">Please wait…</span>
                 </div>
+              </>
+            ) : !IS_FREE ? (
+              <>
+                <h2 className="font-display font-bold italic text-2xl leading-tight mb-3">
+                  {hasHistory ? "Welcome back." : "Ear Training Lab"}
+                </h2>
+                {hasHistory && lastSpot && (
+                  <p className="font-mono text-xs text-mute mb-5">Last session: EQ · {lastSpot}</p>
+                )}
+                <button className="btn btn-solid w-full" onClick={onUnlock}>
+                  {hasHistory ? "Continue from your last session →" : "Start training →"}
+                </button>
+                {onUnlockFresh && (
+                  <button className="btn btn-ghost w-full mt-3" onClick={onUnlockFresh}>Start a fresh practice</button>
+                )}
+                <p className="text-xs mt-5 text-mute leading-relaxed">
+                  Switch between EQ and Compression anytime, or open Levels, Practice, and Learn from the top bar.
+                </p>
+                {isMobile() && (
+                  <p className="text-xs mt-3 text-mute leading-relaxed">
+                    Best with studio monitors or headphones. Make sure your device volume is up.
+                  </p>
+                )}
               </>
             ) : (
               <>
@@ -3666,6 +3702,9 @@
       /* ---------- Audio state ---------- */
       const [audioReady, setAudioReady] = useState(false);
       const [showUnlock, setShowUnlock] = useState(!audioPreUnlocked);
+      // Set when a member picks "Start a fresh practice" on the welcome screen;
+      // consumed once by the task-load effect after audio comes up.
+      const bootFreshRef = useRef(false);
       const [audioLoading, setAudioLoading] = useState(false);
       const [audioError, setAudioError] = useState(null);
       const [isPlaying, setIsPlaying] = useState(false);
@@ -3700,7 +3739,9 @@
         guessDir: null
       });
       const [manualConfig, setManualConfig] = useState(() => {
-        const stored = STORAGE.get("manualConfig", null);
+        // Free sessions start from the defaults every visit; only members keep
+        // their saved practice setup between sessions.
+        const stored = IS_FREE ? null : STORAGE.get("manualConfig", null);
         const defaults = {
           mode: "Matching",
           resolution: "octaves",     // "octaves" | "thirds"
@@ -4876,6 +4917,9 @@
         // Free build: the guided course is members-only, so start free users in Custom
         // Practice (free-form, doesn't touch course progression) instead of a course task.
         if (IS_FREE && !isManualSession && !isLearnMode) { startManualSession(manualConfig); return; }
+        // Member chose "Start a fresh practice" on the welcome screen: open Custom
+        // Practice with their saved setup instead of resuming the course task.
+        if (bootFreshRef.current) { bootFreshRef.current = false; startManualSession(manualConfig); return; }
         // Entry-gated levels: if restored state points at a level whose
         // prerequisite isn't finished, snap back to the prerequisite level.
         const lvGate = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
@@ -4903,6 +4947,12 @@
         if (task) {
           modeChangeSourceRef.current = 'internal';
           applyTaskSpec(task);
+          // Breadcrumb for the welcome screen's "Last session" line.
+          try {
+            const lvSpot = (CURRICULUM.levels || []).find(l => l.id === currentLevelId);
+            window.localStorage.setItem("etl:lastSpot",
+              [((lvSpot && lvSpot.name) || ("Level " + currentLevelId)), "Week " + curriculumWeek, "Task " + (curriculumTaskIndex + 1)].join(" · "));
+          } catch (e) {}
         }
       }, [currentLevelId, curriculumWeek, curriculumTaskIndex, audioReady]);
 
@@ -5048,7 +5098,7 @@
       return (
         <div className="min-h-screen flex flex-col">
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
-          {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} isLoading={audioLoading} error={audioError} />}
+          {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} onUnlockFresh={() => { bootFreshRef.current = true; initializeAudio(); }} isLoading={audioLoading} error={audioError} />}
           {showNewsletter && <NewsletterModal onClose={() => setShowNewsletter(false)} />}
           {showTour && (
             <Walkthrough
@@ -6122,14 +6172,27 @@
     }
     /* ---------- App shell: routes between modules in-app (no reload) ---------- */
     function Shell() {
-      const [activeModule, setActiveModule] = useState("eq");
+      // Members: remember which module was open so the welcome screen resumes it.
+      // Free always boots into EQ and starts fresh each visit.
+      const [activeModule, setActiveModule] = useState(() => {
+        if (IS_FREE) return "eq";
+        try {
+          const m = window.localStorage.getItem("etl:module");
+          if (m === "eq" || m === "compression") return m;
+        } catch (e) {}
+        return "eq";
+      });
+      const switchModule = (m) => {
+        setActiveModule(m);
+        if (!IS_FREE) { try { window.localStorage.setItem("etl:module", m); } catch (e) {} }
+      };
       // Audio is enabled once for the whole app; both modules share that fact so
       // switching between EQ and Compression never re-prompts the unlock overlay.
       const [audioUnlocked, setAudioUnlocked] = useState(false);
-      const shared = { activeModule, onSwitchModule: setActiveModule, audioPreUnlocked: audioUnlocked, onAudioUnlocked: () => setAudioUnlocked(true) };
+      const shared = { activeModule, onSwitchModule: switchModule, audioPreUnlocked: audioUnlocked, onAudioUnlocked: () => setAudioUnlocked(true) };
       if (activeModule === "compression") {
         return IS_FREE
-          ? <FreeCompressionLock activeModule={activeModule} onSwitchModule={setActiveModule} />
+          ? <FreeCompressionLock activeModule={activeModule} onSwitchModule={switchModule} />
           : <CompressionModule {...shared} />;
       }
       return <EqModule {...shared} />;
