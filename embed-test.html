@@ -1,0 +1,69 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Circle embed harness</title>
+<!--
+  Local test harness that mimics the Circle iframe embed, including the
+  auto-resize listener. Open http://127.0.0.1:8137/embed-test.html (or the
+  GitHub Pages copy) at a phone-sized viewport to test the embedded layout.
+
+  THE REAL CIRCLE SETUP (two pieces):
+
+  1) The iframe on each Circle page (members / free — change the src):
+
+    <iframe
+      src="https://audiouniversityonline-sketch.github.io/ear-training-lab/lab.html"
+      style="width:100%;border:0;height:900px;display:block"
+      allow="autoplay"
+      scrolling="no"
+      title="Ear Training Lab"></iframe>
+
+  2) The auto-resize listener, pasted ONCE site-wide in Circle:
+     Settings -> Code Snippets -> Body (or Head). It finds whichever Lab
+     iframe sent the message, so it works for the member page, the free
+     page, and a hidden staging test page at the same time:
+
+    <script>
+    (function () {
+      window.addEventListener('message', function (e) {
+        if (e.origin !== 'https://audiouniversityonline-sketch.github.io') return;
+        var d = e.data;
+        if (!d || d.type !== 'etl:height' || typeof d.height !== 'number') return;
+        var frames = document.querySelectorAll('iframe[src*="ear-training-lab"]');
+        for (var i = 0; i < frames.length; i++) {
+          if (frames[i].contentWindow === e.source) {
+            frames[i].style.height = Math.max(400, Math.min(d.height, 4000)) + 'px';
+            frames[i].setAttribute('scrolling', 'no');
+          }
+        }
+      });
+    })();
+    </script>
+-->
+<style>
+  body { margin: 0; background: #f5f5f5; font-family: sans-serif; }
+  .circle-chrome { background: #fff; border-bottom: 1px solid #ddd; padding: 14px 16px; font-weight: 600; }
+  .circle-wrap { padding: 12px; }
+  iframe { width: 100%; border: 0; display: block; height: 700px; }
+  .note { font-size: 11px; color: #888; padding: 8px 16px; }
+</style>
+</head>
+<body>
+  <div class="circle-chrome">Audio University · Ear Training (Circle mock)</div>
+  <div class="note" id="note">iframe height: 700 (static)</div>
+  <div class="circle-wrap">
+    <iframe id="etl" src="staging.html" allow="autoplay" scrolling="no"></iframe>
+  </div>
+  <script>
+    window.addEventListener('message', function (e) {
+      if (e.data && e.data.type === 'etl:height' && typeof e.data.height === 'number') {
+        var f = document.getElementById('etl');
+        f.style.height = Math.max(400, Math.min(e.data.height, 4000)) + 'px';
+        document.getElementById('note').textContent = 'iframe height: ' + e.data.height + ' (auto)';
+      }
+    });
+  </script>
+</body>
+</html>

@@ -18,17 +18,37 @@
       if (window.self !== window.top) {
         document.documentElement.classList.add('embedded');
         var __etlPostHeight = function () {
-          var h = Math.ceil(document.documentElement.scrollHeight);
+          // Measure the app's real content height. documentElement/body report the
+          // iframe viewport (html/body are height:100%), which is floored at the
+          // iframe's current height — the embed could grow but never shrink back.
+          var app = document.getElementById('app');
+          var h = app ? app.getBoundingClientRect().height : 0;
+          try {
+            var card = document.querySelector('.overlay > *');
+            if (card) h = Math.max(h, card.getBoundingClientRect().bottom + 24);
+          } catch (e) {}
+          h = Math.ceil(h);
+          if (!h || h < 200) return;   // ignore pre-render measurements
           try { window.parent.postMessage({ type: 'etl:height', height: h }, '*'); } catch (e) {}
         };
         window.addEventListener('load', function () {
           __etlPostHeight();
-          try { new ResizeObserver(__etlPostHeight).observe(document.body); } catch (e) {}
+          try { new ResizeObserver(__etlPostHeight).observe(document.getElementById('app') || document.body); } catch (e) {}
           window.addEventListener('resize', __etlPostHeight);
           setInterval(__etlPostHeight, 800);
         });
       }
     } catch (e) { try { document.documentElement.classList.add('embedded'); } catch (e2) {} }
+    // Embedded helper: fixed-position modals anchor to the IFRAME, which can be
+    // much taller than the phone screen, so a "centered" card can open outside
+    // the visible area. Nudge the host page so the card is on screen. No-op
+    // when not embedded; harmless if the browser blocks cross-origin scrolls.
+    window.etlEnsureVisible = function (el) {
+      try {
+        if (!el || !document.documentElement.classList.contains('embedded')) return;
+        el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+      } catch (e) { }
+    };
   </script>
 
   <!-- Theme (dark default / light). Applied before paint so a saved light theme
@@ -515,6 +535,11 @@
       z-index: 1000;
       padding: 20px;
     }
+    /* Embedded: the iframe is fully visible in the host page (auto-resized),
+       so "centered" means the middle of the whole iframe, not the phone
+       screen. Welcome overlays pin to the top, where a fresh page load puts
+       the visitor. Mid-session modals use etlEnsureVisible instead. */
+    .embedded .overlay.overlay-top { align-items: flex-start; padding-top: 24px; }
 
     /* Subtle fade-in for rounds */
     @keyframes fadeUp {
@@ -632,7 +657,24 @@
       .kbd-hints { display: none; }
       .session-card { padding: 16px; }
       .session-card .accuracy-block { display: none; }
+      .session-card .font-display.italic { font-size: 22px; }
+      .session-card .mb-4 { margin-bottom: 8px; }
+      /* Mode picker: one thumb-scrollable row of chips instead of a wrapped
+         block with its own heading. */
+      .mode-section { margin-bottom: 12px; }
+      .mode-section .eyebrow { display: none; }
+      .mode-section .seg {
+        display: flex; flex-wrap: nowrap; width: 100%;
+        overflow-x: auto; -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+      }
+      .mode-section .seg::-webkit-scrollbar { display: none; }
+      .mode-section .seg button { flex: 1 0 auto; white-space: nowrap; padding: 10px 12px; }
+      /* Per-band progress bars collapse behind a toggle on mobile. */
+      .bench .prog-bars { display: none; }
+      .bench .prog-bars.open { display: flex; }
     }
+    @media (min-width: 1024px) { .prog-toggle { display: none; } }
 
     /* ===== Embedded in an iframe (e.g. Circle community page) =====
        A position:fixed dock and 100dvh anchor to the IFRAME, not the phone
@@ -640,6 +682,10 @@
        When embedded, flow naturally: drop the fixed dock, show the inline
        transport instead, and don't force a full-viewport height. */
     .embedded #app { min-height: 0; }
+    /* The module roots carry min-h-screen; inside an auto-resized iframe that
+       creates a feedback loop (viewport height = iframe height = content
+       height), leaving a growing dead gap above the footer. Flow naturally. */
+    .embedded #app .min-h-screen { min-height: 0; }
     @media (max-width: 1023px) {
       .embedded .transport-dock { display: none !important; }
       .embedded .transport-inline { display: block !important; }
@@ -648,6 +694,30 @@
 
     /* Header nav must never clip on narrow widths: let the button groups wrap. */
     .app-nav { flex-wrap: wrap; }
+
+    /* ===== Mobile header compaction (< 1024px) =====
+       On a phone the chrome must not push the exercise below the fold. The nav
+       becomes a tight grid: [Module seg | gear] over [Area seg, full width].
+       When embedded (Circle), the page above the iframe already names the tool,
+       so our brand row is redundant and is dropped entirely. */
+    @media (max-width: 1023px) {
+      /* NOTE: Tailwind CDN injects its stylesheet after this one, so ties on
+         specificity go to Tailwind. Keep these selectors at 2+ parts. */
+      header .app-header-inner { padding-top: 10px; padding-bottom: 10px; }
+      .app-header-inner .brand-row img { height: 28px; width: 28px; }
+      header .app-nav {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+        width: 100%;
+      }
+      header .app-nav .seg { display: flex; min-width: 0; }
+      header .app-nav .seg button { flex: 1; padding: 9px 6px; font-size: 11px; letter-spacing: 0.03em; }
+      header .app-nav .seg[aria-label="Module"] { grid-column: 1; grid-row: 1; }
+      header .app-nav > button.btn { grid-column: 2; grid-row: 1; }
+      header .app-nav .seg[aria-label="Area"] { grid-column: 1 / -1; grid-row: 2; }
+      .embedded .app-header-inner .brand-row { display: none; }
+    }
     .dock-play {
       width: 50px; flex-shrink: 0;
       border: 1px solid var(--line-2);
@@ -723,7 +793,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.12";
+    const APP_VERSION = "v2.13";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -1172,11 +1242,14 @@
       const total = keys.reduce((s, k) => s + (stats[k] ? stats[k].t : 0), 0);
       const weak = weakestKeys(stats, weakPool || keys, minAttempts, weakCount || 2);
       const ready = weak.length >= 1 && total >= minAttempts * 2;
+      // On mobile the per-key bars collapse behind a toggle (CSS hides .prog-bars
+      // under 1024px unless .open; the toggle itself is hidden on desktop).
+      const [expanded, setExpanded] = useState(false);
       return (
         <section className="card p-5 sm:p-6">
           <div className="flex items-center justify-between mb-1"><div className="eyebrow">Progress</div><div className="font-mono text-[10px] text-mute">{total} answered</div></div>
           <div className="font-mono text-[10px] text-mute mb-4">{streakDays > 0 ? ("Streak " + streakDays + (streakDays === 1 ? " day" : " days") + " · ") : ""}Today {today}</div>
-          <div className="flex flex-col gap-2">
+          <div className={"flex flex-col gap-2 prog-bars" + (expanded ? " open" : "")}>
             {keys.map(k => {
               const s = stats[k] || { c: 0, t: 0 }; const has = s.t >= minAttempts; const pct = s.t > 0 ? Math.round((s.c / s.t) * 100) : 0;
               return (
@@ -1190,6 +1263,7 @@
               );
             })}
           </div>
+          <button className="btn btn-ghost w-full mt-3 prog-toggle" onClick={() => setExpanded(!expanded)}>{expanded ? "Hide the breakdown" : "Show the breakdown"}</button>
           {onWeakSpots && (
             <>
               <button className="btn btn-ghost w-full mt-4" onClick={() => onWeakSpots(weak)} disabled={disabled || !ready}>{weakLabel || "Practice weak spots"}</button>
@@ -1214,7 +1288,7 @@
       };
       const field = (bad) => ({ width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 14, background: "var(--panel-2)", color: "var(--ink)", borderRadius: 8, border: "1px solid " + (bad ? "var(--hot)" : "var(--line-2)"), outline: "none" });
       return (
-        <div className="overlay" style={{ zIndex: 200 }}>
+        <div className="overlay" style={{ zIndex: 200 }} ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 420, position: "relative" }}>
             <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
             {done ? (
@@ -1317,7 +1391,7 @@
 
     function AudioUnlockOverlay({ onUnlock, onUnlockFresh, isLoading, error }) {
       return (
-        <div className="overlay"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
+        <div className="overlay overlay-top"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
           <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div></div>
           <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Learn to hear what a compressor does to a sound. Every question has a clear right answer. Both channels are set to the same loudness, so you can't answer by volume alone. Use headphones or studio monitors for the best results.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
@@ -2025,8 +2099,8 @@
           {showTour && <Walkthrough steps={compTourSteps(mode, isLearn)} onClose={() => setShowTour(false)} />}
 
           <header className="border-b rule">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <div className="flex items-center" style={{ gap: 12 }}>
+            <div className="app-header-inner max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="brand-row flex items-center" style={{ gap: 12 }}>
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block", flexShrink: 0 }} />
                 <div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div>
               </div>
@@ -2094,7 +2168,7 @@
                   </section>
                 ) : (
                 <>
-                {area === "practice" && (<section className="mb-6"><div className="eyebrow mb-3">Mode</div><div className="seg flex-wrap">{MODE_ORDER.map(m => (<button key={m} className={mode === m ? "active" : ""} onClick={() => changeMode(m)} disabled={!audioReady}>{MODES[m].label}</button>))}</div></section>)}
+                {area === "practice" && (<section className="mb-6 mode-section"><div className="eyebrow mb-3">Mode</div><div className="seg flex-wrap">{MODE_ORDER.map(m => (<button key={m} className={mode === m ? "active" : ""} onClick={() => changeMode(m)} disabled={!audioReady}>{MODES[m].label}</button>))}</div></section>)}
                 {area === "levels" && activeLevel && (
                   <section className="mb-6">
                     <div className="flex items-center justify-between mb-2"><div className="eyebrow">Level {levelIndex + 1} · {activeLevel.title}</div><div className="font-mono text-[10px] text-mute">{Math.min(levelAnswered + 1, activeLevel.of)} / {activeLevel.of} · {levelCorrect} correct · need {activeLevel.need}</div></div>
@@ -2705,7 +2779,7 @@
         } catch (e) {}
       }
       return (
-        <div className="overlay">
+        <div className="overlay overlay-top">
           <div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: '1px solid var(--rule)' }}>
             <Wordmark />
             <div className="divider mt-6 mb-6"></div>
@@ -2783,7 +2857,7 @@
       const isManual = !!data.isManual;
 
       return (
-        <div className="overlay">
+        <div className="overlay" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-paper max-w-md w-full" style={{ border: '1px solid var(--ink)' }}>
             <div className="p-8">
               <div className="eyebrow mb-2">{isManual ? "Custom Session Complete" : "Task Complete"}</div>
@@ -2973,7 +3047,7 @@
         { keys: ["Esc"], label: "Close overlays" }
       ];
       return (
-        <div className="overlay" onClick={onClose}>
+        <div className="overlay" onClick={onClose} ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div
             className="bg-paper max-w-md w-full"
             style={{ border: '1px solid var(--ink)' }}
@@ -3068,7 +3142,7 @@
       );
 
       return (
-        <div className="overlay" onClick={onClose}>
+        <div className="overlay" onClick={onClose} ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div
             className="bg-paper max-w-2xl w-full max-h-[90vh] overflow-y-auto"
             style={{ border: '1px solid var(--ink)' }}
@@ -5128,8 +5202,8 @@
 
           {/* ============ TOP BAR ============ */}
           <header className="border-b rule">
-            <div className="max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
-              <div className="flex items-center" style={{ gap: 12 }}>
+            <div className="app-header-inner max-w-6xl mx-auto px-4 sm:px-6 py-4 flex flex-col items-start gap-3 sm:flex-row sm:items-center sm:justify-between sm:gap-4">
+              <div className="brand-row flex items-center" style={{ gap: 12 }}>
                 <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: 'block', flexShrink: 0 }} />
                 <div>
                   <div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div>
@@ -5240,7 +5314,7 @@
                 )}
                 {/* Mode selector — description now lives in the left-rail Mode panel (matches Compression) */}
                 {!isLearnMode && (
-                  <section className="mb-6">
+                  <section className="mb-6 mode-section">
                     <div className="eyebrow mb-3">Mode</div>
                     <div className="seg flex-wrap">
                       {["Identify", "Matching", "Return to Flat", "Return to Flat (Memory)"].map(m => (
