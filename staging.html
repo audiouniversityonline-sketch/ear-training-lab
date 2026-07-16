@@ -318,7 +318,7 @@
       cursor: pointer;
     }
     .btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); }
-    .btn:disabled { opacity: 0.35; cursor: not-allowed; }
+    .btn:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Primary CTA — gold fill (the suite's active-control treatment) */
     .btn-solid {
@@ -370,7 +370,7 @@
       color: #0d0d0e;
       box-shadow: inset 0 1px 0 rgba(255, 224, 130, 0.6);
     }
-    .seg button:disabled { opacity: 0.35; cursor: not-allowed; }
+    .seg button:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Freq pill */
     .freq-pill {
@@ -397,7 +397,7 @@
       border-top: 1px solid var(--accent-light);
       box-shadow: 0 0 10px rgba(255, 201, 58, 0.4), inset 0 1px 0 rgba(255, 224, 130, 0.6);
     }
-    .freq-pill:disabled { opacity: 0.35; cursor: not-allowed; }
+    .freq-pill:disabled { opacity: 0.5; cursor: not-allowed; }
     .freq-pill .label { font-weight: 600; font-size: 15px; letter-spacing: -0.01em; }
     .freq-pill .index { font-size: 9px; opacity: 0.5; margin-top: 3px; letter-spacing: 0.05em; }
 
@@ -452,7 +452,7 @@
       flex-shrink: 0;
     }
     .transport:hover:not(:disabled) { border-color: var(--accent); color: var(--accent-ink); box-shadow: 0 0 12px rgba(255, 201, 58, 0.35); }
-    .transport:disabled { opacity: 0.35; cursor: not-allowed; }
+    .transport:disabled { opacity: 0.5; cursor: not-allowed; }
 
     /* Progress tick bar */
     .tick-row { display: flex; gap: 2px; }
@@ -523,6 +523,18 @@
     .week-card .num { font-family: 'Bricolage Grotesque', 'Geist', sans-serif; font-weight: 700; font-size: 11px; letter-spacing: 0.1em; text-transform: uppercase; opacity: 0.55; }
     .week-card .title { font-family: 'Bricolage Grotesque', 'Geist', sans-serif; font-weight: 700; font-size: 15px; line-height: 1.25; letter-spacing: -0.01em; }
     .week-card .meta { font-family: 'Geist Mono', monospace; font-size: 10px; letter-spacing: 0.05em; opacity: 0.7; margin-top: auto; }
+
+    /* Subtle, themed scrollbars on the app's own scroll containers. Keeps a few
+       px of sub-pixel overflow from drawing a heavy default bar (mainly the
+       Circle iframe on Windows/Chrome; macOS overlay bars already auto-hide). */
+    .bench-right, .mobile-drawer, .overflow-y-auto {
+      scrollbar-width: thin;
+      scrollbar-color: rgb(var(--rule-rgb) / 0.85) transparent;
+    }
+    .bench-right::-webkit-scrollbar, .mobile-drawer::-webkit-scrollbar, .overflow-y-auto::-webkit-scrollbar { width: 8px; height: 8px; }
+    .bench-right::-webkit-scrollbar-thumb, .mobile-drawer::-webkit-scrollbar-thumb, .overflow-y-auto::-webkit-scrollbar-thumb { background: rgb(var(--rule-rgb) / 0.85); border-radius: 4px; }
+    .bench-right::-webkit-scrollbar-thumb:hover, .mobile-drawer::-webkit-scrollbar-thumb:hover, .overflow-y-auto::-webkit-scrollbar-thumb:hover { background: rgb(var(--rule-rgb) / 1); }
+    .bench-right::-webkit-scrollbar-track, .mobile-drawer::-webkit-scrollbar-track, .overflow-y-auto::-webkit-scrollbar-track { background: transparent; }
 
     /* Overlay */
     .overlay {
@@ -793,7 +805,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.13";
+    const APP_VERSION = "v2.14";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -1288,7 +1300,7 @@
       };
       const field = (bad) => ({ width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 14, background: "var(--panel-2)", color: "var(--ink)", borderRadius: 8, border: "1px solid " + (bad ? "var(--hot)" : "var(--line-2)"), outline: "none" });
       return (
-        <div className="overlay" style={{ zIndex: 200 }} ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+        <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Get the Ear Training Guide" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 420, position: "relative" }}>
             <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
             {done ? (
@@ -1391,11 +1403,11 @@
 
     function AudioUnlockOverlay({ onUnlock, onUnlockFresh, isLoading, error }) {
       return (
-        <div className="overlay overlay-top"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
+        <div className="overlay overlay-top" role="dialog" aria-modal="true" aria-label="Ear Training Lab, Compression, start"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
           <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div></div>
           <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Learn to hear what a compressor does to a sound. Every question has a clear right answer. Both channels are set to the same loudness, so you can't answer by volume alone. Use headphones or studio monitors for the best results.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
-          <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading}>{isLoading ? "Building source..." : "Continue from your last session →"}</button>
+          <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading} autoFocus>{isLoading ? "Building source..." : "Continue from your last session →"}</button>
           {onUnlockFresh && (
             <button className="btn btn-ghost w-full mt-3" onClick={onUnlockFresh} disabled={isLoading}>Start a fresh practice</button>
           )}
@@ -1562,7 +1574,7 @@
         { selector: '[data-tour="answer"]', title: "Make your pick", body: "Answer this round's question. You'll see if you're right, then move on." },
       ];
       if (mode === "rank") return [
-        { title: "How Rank works", body: "Three channels — A, B and C — each set to a different value of one control, at matched loudness. Your job is to put them in order." },
+        { title: "How Rank works", body: "Three channels (A, B and C) each set to a different value of one control, at matched loudness. Your job is to put them in order." },
         { selector: '[data-tour="listen"]', title: "Listen to all three", body: "Press play and switch between A, B and C. Compare how much each one is being compressed (or how fast it reacts)." },
         { selector: '[data-tour="answer"]', title: "Tap them in order", body: "Tap the channels least to most (or fastest to slowest). Tapping also plays that channel. Clear to redo, then Submit." },
       ];
@@ -1726,7 +1738,7 @@
             });
             const wetT = await renderWet(buf, targetPreset); const makeupTarget = await makeupFor(wetT, dryLoudE); const envTarget = envelopeOf(wetT, ENV_POINTS, makeupTarget);
             const wetS = await renderWet(buf, startPreset); const makeupStart = await makeupFor(wetS, dryLoudE);
-            return { mode: "match", combine: true, stepped, steps, controls, notches, targetIndex, startIndex, startPos, targets, tol, targetPreset, startPreset, makeupTarget, makeupStart, envTarget, prompt: "Match A on B — set every control." };
+            return { mode: "match", combine: true, stepped, steps, controls, notches, targetIndex, startIndex, startPos, targets, tol, targetPreset, startPreset, makeupTarget, makeupStart, envTarget, prompt: "Match A on B. Set every control." };
           }
           const control = mpool[Math.floor(Math.random() * mpool.length)];
           const steps = MATCH_STEPS[diff];
@@ -2045,8 +2057,14 @@
       useEffect(() => {
         if (!audioReady) return;
         const onKey = (e) => {
+          if (e.key === "Escape") {
+            if (showTour) { setShowTour(false); return; }
+            if (showDrawer) { setShowDrawer(false); return; }
+          }
           if (e.target && (e.target.tagName === "INPUT" || e.target.tagName === "SELECT" || e.target.tagName === "TEXTAREA")) return;
           if (inLevelMenu) return;
+          // Don't fire transport/answer shortcuts while a modal or drawer is open.
+          if (showTour || showDrawer) return;
           const k = e.key.toLowerCase();
           if (e.key === " ") { e.preventDefault(); toggleAudio(); return; }
           if (k === "a") { switchToChannel("A"); return; }
@@ -2060,7 +2078,7 @@
           }
         };
         window.addEventListener("keydown", onKey); return () => window.removeEventListener("keydown", onKey);
-      }, [audioReady, area, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, rankOrder, activeLevel, levelAnswered, levelCorrect, inLevelMenu]);
+      }, [audioReady, area, isLearn, mode, round, showAnswer, isPlaying, listenCh, matchPos, matchIndex, rankOrder, activeLevel, levelAnswered, levelCorrect, inLevelMenu, showTour, showDrawer]);
 
       const renderOptions = () => {
         if (!round || round.mode === "match") return null;
@@ -2094,6 +2112,7 @@
 
       return (
         <div className="min-h-screen flex flex-col">
+          <h1 className="sr-only">Ear Training Lab, Compression</h1>
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
           {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay onUnlock={unlock} onUnlockFresh={() => { setArea("practice"); unlock(); }} isLoading={audioLoading} error={audioError} />}
           {showTour && <Walkthrough steps={compTourSteps(mode, isLearn)} onClose={() => setShowTour(false)} />}
@@ -2192,7 +2211,7 @@
                 {/* Match */}
                 {!isLearn && round && round.mode === "match" && round.combine && !showAnswer && (
                   <section data-tour="answer" className="card-dark p-5 mb-6">
-                    <div className="eyebrow mb-3">Your settings — match all of A</div>
+                    <div className="eyebrow mb-3">Your settings: match all of A</div>
                     <div className="flex flex-col gap-5">
                       {round.controls.map(c => {
                         const idx = comboIndex[c] != null ? comboIndex[c] : 0, p = comboPos[c] != null ? comboPos[c] : 0.5;
@@ -2255,7 +2274,7 @@
                 {/* Learn free-dial — all four controls move together */}
                 {isLearn && (
                   <section data-tour="answer" className="mb-6">
-                    <div className="eyebrow mb-3">Controls — move all four</div>
+                    <div className="eyebrow mb-3">Controls: move all four</div>
                     <div className="card-dark p-5 flex flex-col gap-5">
                       {["threshold", "ratio", "attack", "release"].map(c => (
                         <div key={c}>
@@ -2273,7 +2292,7 @@
                 {!isLearn && showAnswer && round && round.mode === "rank" && (
                   <section className={"card-dark p-5 mb-6 fade-up " + (lastCorrect ? "feedback-correct" : "feedback-wrong")}>
                     <div className="flex items-center justify-between mb-2"><div className="font-display font-bold text-lg" style={{ color: lastCorrect ? "var(--green)" : "var(--hot)" }}>{rankResult && rankResult.exact ? "✓ Spot on" : rankResult && rankResult.close ? "✓ Close" : "✗ Not quite"}</div><div className="font-mono text-xs text-mute">{round.orderLabel}</div></div>
-                    {rankResult && rankResult.close && <p className="text-xs text-mute mb-2">One pair swapped — you had the overall order, just the two closest the other way around.</p>}
+                    {rankResult && rankResult.close && <p className="text-xs text-mute mb-2">One pair swapped. You had the overall order, just the two closest the other way around.</p>}
                     <p className="text-sm text-ink-2 leading-relaxed mb-3">The correct order, {round.orderLabel}:</p>
                     <div className="flex flex-col gap-1.5 font-mono text-xs">
                       {round.order.map((ch, i) => (<div key={ch} className="flex items-center gap-3"><span className="text-mute" style={{ width: 18 }}>#{i + 1}</span><span className="text-ink" style={{ width: 84 }}>Channel {ch}</span><span style={{ color: "var(--accent-ink)" }}>{round.valueLabel[ch]}</span></div>))}
@@ -2319,7 +2338,7 @@
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-3">
                       <div className="eyebrow">Transient Scope</div>
-                      <MatchToggle on={scopeMatch} onToggle={() => setScopeMatch(v => !v)} disabled={!audioReady} label="Level match" title="Levels the two traces in the scope so you compare their shape, not their height. Turn it off to see the real output level." />
+                      <MatchToggle on={scopeMatch} onToggle={() => setScopeMatch(v => !v)} disabled={!audioReady} label="Match height" title="Levels the two traces in the scope so you compare their shape, not their height. Turn it off to see the real output level." />
                     </div>
                     <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent-ink)" }}>{roles.B}</span></span></div>
                   </div>
@@ -2365,7 +2384,7 @@
           {showDrawer && (
             <div className="mobile-drawer open">
               <div className="flex items-center justify-between p-5 border-b rule"><div className="eyebrow">Settings</div><button className="btn btn-ghost" onClick={() => setShowDrawer(false)} aria-label="Close"><CloseGlyph /></button></div>
-              <div className="p-5 flex flex-col gap-6 overflow-y-auto">
+              <div className="w-full max-w-2xl mx-auto p-5 flex flex-col gap-6 overflow-y-auto">
                 <ThemeControl />
                 <p className="text-xs text-mute leading-relaxed">Custom settings are for free Practice. Changing one here leaves the current level.</p>
                 <div>
@@ -2663,6 +2682,14 @@
       return String(f);
     }
 
+    // Curriculum task names are stored with an internal "W1-T3 — " id prefix and
+    // em-dash separators. The id is redundant with the "Week N · Task N" shown
+    // beside it, so strip it and normalize dashes for display (data untouched).
+    function cleanTaskName(name) {
+      if (!name) return "";
+      return String(name).replace(/^\s*W\d+-T\d+\s*[—–-]\s*/i, "").replace(/\s*[—–]\s*/g, " · ").trim();
+    }
+
     /*
      * Curated source library. Loudness-matched MP3s in `/audio/`, shared with the
      * Compression module. Selecting one decodes through the same pipeline as
@@ -2779,7 +2806,7 @@
         } catch (e) {}
       }
       return (
-        <div className="overlay overlay-top">
+        <div className="overlay overlay-top" role="dialog" aria-modal="true" aria-label="Ear Training Lab, start">
           <div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: '1px solid var(--rule)' }}>
             <Wordmark />
             <div className="divider mt-6 mb-6"></div>
@@ -2788,7 +2815,7 @@
               <>
                 <div className="eyebrow mb-3">Audio Error</div>
                 <p className="text-sm mb-6 leading-relaxed">{error}</p>
-                <button className="btn btn-solid w-full" onClick={onUnlock}>Try Again</button>
+                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>Try Again</button>
               </>
             ) : isLoading ? (
               <>
@@ -2807,7 +2834,7 @@
                 {hasHistory && lastSpot && (
                   <p className="font-mono text-xs text-mute mb-5">Last session: EQ · {lastSpot}</p>
                 )}
-                <button className="btn btn-solid w-full" onClick={onUnlock}>
+                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>
                   {hasHistory ? "Continue from your last session →" : "Start training →"}
                 </button>
                 {onUnlockFresh && (
@@ -2828,7 +2855,7 @@
                 <p className="text-sm mb-6 leading-relaxed text-mute">
                   Browsers require a click before audio can play. Tap below to enable audio and start training.
                 </p>
-                <button className="btn btn-solid w-full" onClick={onUnlock}>Enable Audio</button>
+                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>Enable Audio</button>
                 {isMobile() && (
                   <p className="text-xs mt-4 text-mute leading-relaxed">
                     Best with studio monitors or headphones. Make sure your device volume is up.
@@ -2857,7 +2884,7 @@
       const isManual = !!data.isManual;
 
       return (
-        <div className="overlay" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+        <div className="overlay" role="dialog" aria-modal="true" aria-label="Task complete" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-paper max-w-md w-full" style={{ border: '1px solid var(--ink)' }}>
             <div className="p-8">
               <div className="eyebrow mb-2">{isManual ? "Custom Session Complete" : "Task Complete"}</div>
@@ -3047,7 +3074,7 @@
         { keys: ["Esc"], label: "Close overlays" }
       ];
       return (
-        <div className="overlay" onClick={onClose} ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+        <div className="overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Keyboard shortcuts" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div
             className="bg-paper max-w-md w-full"
             style={{ border: '1px solid var(--ink)' }}
@@ -3142,7 +3169,7 @@
       );
 
       return (
-        <div className="overlay" onClick={onClose} ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+        <div className="overlay" onClick={onClose} role="dialog" aria-modal="true" aria-label="Build your practice" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div
             className="bg-paper max-w-2xl w-full max-h-[90vh] overflow-y-auto"
             style={{ border: '1px solid var(--ink)' }}
@@ -3432,7 +3459,7 @@
 
       const headerTitle = viewLevelLocked && lockedLevel
         ? lockedLevel.name
-        : (activeLevel?.name ? `${activeLevel.name} — ${weeks.length} Levels` : "Levels");
+        : (activeLevel?.name ? `${activeLevel.name} · ${weeks.length} Levels` : "Levels");
 
       return (
         <div className={inline ? "max-w-3xl mx-auto w-full px-4 sm:px-6 py-8" : "overlay"} onClick={inline ? undefined : onClose}>
@@ -3573,11 +3600,12 @@
                                   background: isDone ? 'var(--accent)' : 'transparent',
                                   border: isDone ? 'none' : '1px solid var(--rule)'
                                 }}
+                                role="img"
                                 aria-label={isDone ? 'Completed' : 'Not completed'}
                               />
                               <div className="flex-1 min-w-0">
                                 <div className="font-mono text-xs text-mute mb-1">Task {i + 1} of {weekPlan.tasks.length}</div>
-                                <div className="font-display font-semibold text-sm truncate">{t.name}</div>
+                                <div className="font-display font-semibold text-sm truncate">{cleanTaskName(t.name)}</div>
                               </div>
                             </div>
                             <div className="flex items-center gap-4 ml-4 flex-shrink-0">
@@ -4087,7 +4115,7 @@
             setTimeout(() => startAudio(), 100);
           }
         } catch (error) {
-          alert("Couldn't load that source — falling back to pink noise. " + (error.message || ''));
+          alert("Couldn't load that source. Falling back to pink noise. " + (error.message || ''));
           setAudioSource('noise');
           setActiveSourceId(null);
         } finally {
@@ -5073,9 +5101,17 @@
             return;
           }
           if (key === 'Escape') {
+            // Close the topmost open overlay (matches the "Esc — Close overlays" hint).
             if (showKeyboardHelp) { setShowKeyboardHelp(false); return; }
+            if (showTour) { setShowTour(false); return; }
+            if (taskCompleteData) { setTaskCompleteData(null); return; }
+            if (showManualSetup) { setShowManualSetup(false); return; }
+            if (showDrawer) { setShowDrawer(false); return; }
             if (showCurriculum) { setShowCurriculum(false); return; }
           }
+          // While a modal/drawer covers the exercise, don't fire the transport or
+          // answer shortcuts behind it.
+          if (showKeyboardHelp || showTour || taskCompleteData || showManualSetup || showDrawer) return;
 
           if (key === " ") { e.preventDefault(); toggleAudio(); return; }
           if (lower === "a" && !isChannelDisabled("A")) { switchToChannel("A"); return; }
@@ -5154,7 +5190,7 @@
         };
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-      }, [round, showAnswer, mode, isPlaying, showUnlock, hasLeftChannelA, guessFreq, guessDir, answerFreq, answerDir, bandPool, eqMode, showKeyboardHelp, showCurriculum]);
+      }, [round, showAnswer, mode, isPlaying, showUnlock, hasLeftChannelA, guessFreq, guessDir, answerFreq, answerDir, bandPool, eqMode, showKeyboardHelp, showCurriculum, showTour, taskCompleteData, showManualSetup, showDrawer]);
 
       /* ---------- Derived values for rendering ---------- */
       const currentTask = getCurrentTask();
@@ -5171,6 +5207,7 @@
 
       return (
         <div className="min-h-screen flex flex-col">
+          <h1 className="sr-only">Ear Training Lab, Equalization</h1>
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
           {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} onUnlockFresh={() => { bootFreshRef.current = true; initializeAudio(); }} isLoading={audioLoading} error={audioError} />}
           {showNewsletter && <NewsletterModal onClose={() => setShowNewsletter(false)} />}
@@ -5372,7 +5409,7 @@
                   <section className="card-dark p-4 mb-6" style={{ position: 'relative' }}>
                     <div className="text-xs text-ink-2 leading-relaxed">
                       {hasLeftChannelA
-                        ? "A is locked. Work from memory — apply the opposite EQ on C to cancel what you heard on B."
+                        ? "A is locked. Work from memory: apply the opposite EQ on C to cancel what you heard on B."
                         : "Listen to A carefully. Once you leave A, you can't return."}
                     </div>
                   </section>
@@ -5386,7 +5423,7 @@
                   <section className="mb-4">
                     <div className="font-mono text-[10px] uppercase tracking-wider text-mute">
                       {!isManualSession && currentTask
-                        ? ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " — " + currentTask.name : "")
+                        ? ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : "")
                         : "Custom Practice"}
                     </div>
                     <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: "var(--accent-ink)" }}>
