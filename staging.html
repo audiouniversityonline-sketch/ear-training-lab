@@ -805,7 +805,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.14";
+    const APP_VERSION = "v2.15";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -2338,12 +2338,12 @@
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div className="flex items-center gap-3">
                       <div className="eyebrow">Transient Scope</div>
-                      <MatchToggle on={scopeMatch} onToggle={() => setScopeMatch(v => !v)} disabled={!audioReady} label="Match height" title="Levels the two traces in the scope so you compare their shape, not their height. Turn it off to see the real output level." />
+                      <MatchToggle on={scopeMatch} onToggle={() => setScopeMatch(v => !v)} disabled={!audioReady} label="Match amplitude" title="Scales both traces to the same peak amplitude so you compare their shape, not their level. Turn it off to see the real output, where more compression reads quieter." />
                     </div>
                     <div className="font-mono text-[10px] text-mute flex items-center gap-3"><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--cool)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--cool)" }}>{roles.A}</span></span><span className="flex items-center gap-1"><span style={{ width: 8, height: 8, background: "var(--accent)", borderRadius: 1, display: "inline-block" }}></span><span style={{ color: "var(--accent-ink)" }}>{roles.B}</span></span></div>
                   </div>
                   {showVisuals ? <GrScope envA={scopeA} envB={scopeB} envMax={scopeMax} /> : (<div className="flex items-center justify-center text-xs text-ink-3" style={{ height: 110 }}>Hidden until you answer.</div>)}
-                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {scopeMatch ? "Both are leveled to match, so compare their shapes, not their height." : "Level match is off, so this shows the real output level. More compression makes the signal quieter."}</p>}
+                  {showVisuals && <p className="text-xs text-mute mt-3 leading-relaxed">Blue is {roles.A}, gold is {roles.B}. {scopeMatch ? "Both are scaled to the same amplitude, so compare their shape: compression flattens the peaks and fills in the body between them." : "Amplitude match is off, so this is the real output level. More compression makes the raw signal quieter."}</p>}
                 </section>
                 )}
                 </>
