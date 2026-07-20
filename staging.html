@@ -805,7 +805,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.15";
+    const APP_VERSION = "v2.16";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -2445,7 +2445,10 @@
       mids_thirds: ISO_THIRD_OCTAVE_BANDS.filter(f => f >= 250 && f <= 4000),
       full_thirds: [...ISO_THIRD_OCTAVE_BANDS],
       thirds_125_500: ISO_THIRD_OCTAVE_BANDS.filter(f => f >= 125 && f <= 500),
-      octaves_125_8k: [125, 250, 500, 1000, 2000, 4000, 8000]
+      octaves_125_8k: [125, 250, 500, 1000, 2000, 4000, 8000],
+      // Level 3 (TET-3) works third-octave over the same 125 Hz - 8 kHz span the
+      // syllabus writes as "FR-" and "XMF". 19 centers instead of 7.
+      thirds_125_8k: ISO_THIRD_OCTAVE_BANDS.filter(f => f >= 125 && f <= 8000)
     };
 
     /*
@@ -2586,9 +2589,22 @@
 
     let CURRICULUM = normalizeCurriculum(INLINE_CURRICULUM_DEFAULT);
 
+    /*
+     * STAGING SPLIT: Level 3 is a draft, so it lives in `curriculum-v3.json` (3 levels)
+     * and only staging reads it. Production reads `curriculum.json` (2 levels), so
+     * members never see Level 3 until it is approved. The check is on the pathname
+     * (same idiom as PREVIEW_UNLOCK above), which means promoting staging.html to
+     * lab.html does NOT leak Level 3 - the promoted copy still reads curriculum.json.
+     * To ship Level 3 for real: copy curriculum-v3.json over curriculum.json, delete
+     * it, and drop this branch. Same pattern used to ship Level 2.
+     */
+    const CURRICULUM_FILE = ((typeof window !== "undefined") && /staging/i.test(window.location.pathname))
+      ? 'curriculum-v3.json'
+      : 'curriculum.json';
+
     async function loadCurriculum() {
       try {
-        const res = await fetch('curriculum.json', { cache: 'no-store' });
+        const res = await fetch(CURRICULUM_FILE, { cache: 'no-store' });
         if (!res.ok) throw new Error('Curriculum fetch failed: ' + res.status);
         const data = await res.json();
         CURRICULUM = normalizeCurriculum(data);
@@ -2712,8 +2728,20 @@
       { id: 'acoustic', name: 'Acoustic Guitar',   category: 'Guitar', path: 'audio/acoustic-guitar.mp3', range: [125, 8000] },
       { id: 'vocal',    name: 'Lead Vocal',        category: 'Vocals', path: 'audio/vocal.mp3',           range: [125, 8000] },
       { id: 'bgvocal',  name: 'Background Vocals', category: 'Vocals', path: 'audio/bg-vocals.mp3',       range: [125, 8000] },
-      { id: 'piano',    name: 'Piano',             category: 'Solo Instruments', path: 'audio/piano-chopin.mp3', range: [125, 4000] }
+      { id: 'piano',    name: 'Piano',             category: 'Solo Instruments', path: 'audio/piano-chopin.mp3', range: [125, 4000] },
+      /*
+       * Level 3 (TET-3) special program material. These three speech sources are
+       * specified by the syllabus but not recorded yet, so they carry no `path` and
+       * are marked pending: the picker hides them, and a Level 3 task that asks for
+       * one runs on pink noise with a notice instead of erroring. To activate one,
+       * drop the file in audio/ and add its `path` here - nothing else changes.
+       */
+      { id: 'speech-de', name: 'German Speech',  category: 'Speech', range: [125, 8000], pending: true },
+      { id: 'speech-en', name: 'English Speech', category: 'Speech', range: [125, 8000], pending: true },
+      { id: 'speech-f',  name: 'Female Speech',  category: 'Speech', range: [125, 8000], pending: true }
     ];
+    const SOURCE_BY_ID = SOURCE_LIBRARY.reduce((m, s) => { m[s.id] = s; return m; }, {});
+    const sourceIsReady = (s) => !!(s && s.path && !s.pending);
 
     // Localized copy for mode descriptions — explains the WHY
     const MODE_DESCRIPTIONS = {
@@ -4090,6 +4118,9 @@
        * user-uploaded WAVs — the difference is only where the bytes come from.
        */
       const [activeSourceId, setActiveSourceId] = useState(null);
+      // Set when a task asks for program material that has not been recorded yet.
+      // The task still runs (on pink noise); this just explains why.
+      const [taskSourceNote, setTaskSourceNote] = useState(null);
       const loadSourceFromLibrary = async (source) => {
         setIsLoadingFile(true);
         try {
@@ -4621,6 +4652,28 @@
         setGainOptions(Array.isArray(task.gainOptions) && task.gainOptions.length > 0
           ? task.gainOptions
           : null);
+        /*
+         * Program material (Level 3 "SP" tasks). A curriculum task may name a source
+         * from SOURCE_LIBRARY; everything else trains on pink noise. Three cases:
+         *   - named + recorded  -> load it
+         *   - named + pending   -> pink noise, with a note saying why
+         *   - not named         -> pink noise, so a source never leaks into the next task
+         * Manual sessions are left alone: there the user picks the source themselves.
+         */
+        const isManualTask = Array.isArray(task.freqPool) && task.freqPool.length > 0;
+        const wantSource = task.source ? SOURCE_BY_ID[task.source] : null;
+        if (task.source && sourceIsReady(wantSource)) {
+          setTaskSourceNote(null);
+          if (activeSourceId !== wantSource.id) loadSourceFromLibrary(wantSource);
+        } else {
+          if (task.source) {
+            setTaskSourceNote((wantSource ? wantSource.name : "That program material")
+              + " is not recorded yet, so this task runs on pink noise for now.");
+          } else {
+            setTaskSourceNote(null);
+          }
+          if (!isManualTask && activeSourceId) { setAudioSource('noise'); setActiveSourceId(null); }
+        }
         setRound(null);
         setShowAnswer(false);
         setGuessFreq(null);
@@ -5429,8 +5482,18 @@
                     <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: "var(--accent-ink)" }}>
                       {"Listen for: " + (eqMode === "both" ? "peaks and dips" : eqMode === "cut" ? "dips (cuts)" : "peaks (boosts)")
                         + " · " + ((gainOptions && gainOptions.length > 1) ? gainOptions.map(g => g + " dB").join(" or ") : gainDb + " dB")
-                        + (filterCount > 1 ? " · " + filterCount + " bands at once" : "")}
+                        + (filterCount > 1 ? " · " + filterCount + " bands at once" : "")
+                        + (currentTask && currentTask.bandwidth === "1_3_oct" ? " · third octave" : "")}
                     </div>
+                    {/* Program material: name what you are listening to, or explain the
+                        fallback when a Level 3 source has not been recorded yet. */}
+                    {(taskSourceNote || activeSourceId) && (
+                      <div className="font-mono text-[10px] uppercase tracking-wider mt-1 text-mute">
+                        {taskSourceNote
+                          ? taskSourceNote
+                          : "Source: " + ((SOURCE_BY_ID[activeSourceId] || {}).name || "custom")}
+                      </div>
+                    )}
                   </section>
                 )}
 
@@ -6011,8 +6074,10 @@
     }) {
       const fileInputRef = useRef(null);
 
-      // Group library sources by category for clean rendering.
-      const libraryByCategory = SOURCE_LIBRARY.reduce((acc, s) => {
+      // Group library sources by category for clean rendering. Pending sources
+      // (declared for Level 3 but not recorded yet) have no file, so they stay out
+      // of the picker until their audio lands.
+      const libraryByCategory = SOURCE_LIBRARY.filter(sourceIsReady).reduce((acc, s) => {
         if (!acc[s.category]) acc[s.category] = [];
         acc[s.category].push(s);
         return acc;
