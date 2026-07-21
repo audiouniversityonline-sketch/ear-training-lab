@@ -806,10 +806,9 @@
     // What membership adds, shown wherever we prompt a free user to upgrade. One list,
     // reused, so the pitch stays consistent.
     const MEMBER_BENEFITS = [
-      "The full 15-week EQ curriculum: Foundations, Advanced, and Mastery",
-      "The Compression ear trainer and its guided levels",
-      "Your progress and streaks saved as you advance",
-      "New levels and real program material as they ship"
+      "The full EQ curriculum: Foundations, Advanced, and Mastery",
+      "The compression training and its guided levels",
+      "Levels that build in difficulty as you improve"
     ];
     // Free-tier email + engagement flags (localStorage). nlSubscribed is set once the
     // Kit form succeeds so we never ask the same visitor twice.
@@ -1302,55 +1301,6 @@
         </section>
       );
     }
-    // Free build: newsletter signup popup (shown once, after a short session).
-    // Our own styled field; submits straight to Kit's form endpoint (no embedded Kit form).
-    function NewsletterModal({ onClose }) {
-      const [firstName, setFirstName] = useState("");
-      const [email, setEmail] = useState("");
-      const [err, setErr] = useState("");   // "" | "name" | "email"
-      const [done, setDone] = useState(false);
-      const submit = () => {
-        if (!firstName.trim()) { setErr("name"); return; }
-        if (!isValidEmail(email)) { setErr("email"); return; }
-        submitToKit(email, firstName);
-        setDone(true);
-      };
-      const field = (bad) => ({ width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 14, background: "var(--panel-2)", color: "var(--ink)", borderRadius: 8, border: "1px solid " + (bad ? "var(--hot)" : "var(--line-2)"), outline: "none" });
-      return (
-        <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Get the Ear Training Guide" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
-          <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 420, position: "relative" }}>
-            <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
-            {done ? (
-              <>
-                <div className="eyebrow mb-2" style={{ color: "var(--green)" }}>✓ On its way</div>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Check your inbox</h2>
-                <p className="text-sm text-mute leading-relaxed mb-5">We're sending the Ear Training Guide to your email. Confirm your address if asked, then keep training.</p>
-                <button onClick={onClose} className="btn btn-solid w-full">Keep training</button>
-              </>
-            ) : (
-              <>
-                <div className="eyebrow mb-2">Free guide</div>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Get the Ear Training Guide</h2>
-                <p className="text-sm text-mute leading-relaxed mb-4">A quick reference for the cues that mark low, mid, and high frequencies. Tell us where to send it.</p>
-                <div className="flex flex-col gap-2">
-                  <input type="text" autoComplete="given-name" placeholder="First name" value={firstName}
-                    onChange={(e) => { setFirstName(e.target.value); if (err === "name") setErr(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "name")} />
-                  <input type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email}
-                    onChange={(e) => { setEmail(e.target.value); if (err === "email") setErr(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "email")} />
-                </div>
-                {err === "name" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>Please add your first name.</div>}
-                {err === "email" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
-                <button onClick={submit} className="btn btn-solid w-full mt-4">Send me the guide</button>
-                <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Maybe later</button>
-              </>
-            )}
-          </div>
-        </div>
-      );
-    }
-
     // Shared benefits list. One source of truth for the upgrade pitch, reused by the
     // Week 1 gate, the returning-visitor nudge, and the persistent Practice card.
     function MemberBenefits({ compact }) {
@@ -1368,11 +1318,14 @@
       );
     }
 
-    // Week 1 complete gate for free users. Two steps: capture the email at the moment
-    // of accomplishment (skippable), then the membership pitch. Once a visitor has
-    // subscribed, it opens straight on the pitch. This is the email-to-continue moment.
+    // Hard email gate at the end of the free Week 1 taste. Step 1 requires an email to
+    // continue: no skip, no dismiss. Step 2 is the membership call to action and is
+    // dismissible. A visitor who already gave their email opens straight on step 2.
     function WeekOneGate({ onClose }) {
-      const alreadySub = (() => { try { return !!STORAGE.get(FREE_FLAGS.subscribed, false); } catch (e) { return false; } })();
+      // NOTE: this component lives above the App-scoped STORAGE helper, so it reads and
+      // writes localStorage directly with the same JSON semantics STORAGE uses (the flag
+      // is stored as the string "true").
+      const alreadySub = (() => { try { return localStorage.getItem(FREE_FLAGS.subscribed) === "true"; } catch (e) { return false; } })();
       const [step, setStep] = useState(alreadySub ? "pitch" : "email");
       const [firstName, setFirstName] = useState("");
       const [email, setEmail] = useState("");
@@ -1382,18 +1335,19 @@
         if (!firstName.trim()) { setErr("name"); return; }
         if (!isValidEmail(email)) { setErr("email"); return; }
         submitToKit(email, firstName);
-        try { STORAGE.set(FREE_FLAGS.subscribed, true); } catch (e) {}
+        try { localStorage.setItem(FREE_FLAGS.subscribed, "true"); } catch (e) {}
         setStep("pitch");
       };
       return (
-        <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Week 1 complete" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+        <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Add your email to continue" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 440, position: "relative" }}>
-            <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
+            {step === "pitch" && (
+              <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
+            )}
             {step === "email" ? (
               <>
-                <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>Foundations Week 1 complete</div>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Nice work. Keep sharpening your ear.</h2>
-                <p className="text-sm text-mute leading-relaxed mb-4">Add your email and we'll send the Ear Training Guide plus new drills as they land. Then keep practicing free, or open the full path below.</p>
+                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Add your email to continue</h2>
+                <p className="text-sm text-mute leading-relaxed mb-4">We'll send you the Ear Training Guide, and you can keep practicing for free.</p>
                 <div className="flex flex-col gap-2">
                   <input type="text" autoComplete="given-name" placeholder="First name" value={firstName}
                     onChange={(e) => { setFirstName(e.target.value); if (err === "name") setErr(""); }}
@@ -1404,14 +1358,11 @@
                 </div>
                 {err === "name" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>Please add your first name.</div>}
                 {err === "email" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
-                <button onClick={submit} className="btn btn-solid w-full mt-4">Send it and continue</button>
-                <button onClick={() => setStep("pitch")} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Skip for now</button>
+                <button onClick={submit} className="btn btn-solid w-full mt-4">Continue</button>
               </>
             ) : (
               <>
-                <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>You've got the idea</div>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-2">That was Week 1 of 15.</h2>
-                <p className="text-sm text-mute leading-relaxed mb-4">You just ran the first week of the guided path. Members keep going with the structured course that trains your ear faster than practicing on your own.</p>
+                <h2 className="font-display font-bold text-2xl leading-tight mb-4">Become a member for access to the full program</h2>
                 <div className="mb-5"><MemberBenefits /></div>
                 <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
                 <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Keep practicing free</button>
@@ -1422,16 +1373,13 @@
       );
     }
 
-    // Returning-visitor reminder. Dismissible, throttled by the caller, and framed
-    // around accelerating the work they are already putting in.
+    // Returning-visitor reminder. Dismissible, throttled by the caller.
     function MemberNudge({ onClose }) {
       return (
-        <div className="overlay" style={{ zIndex: 190 }} role="dialog" aria-modal="true" aria-label="Accelerate your training" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+        <div className="overlay" style={{ zIndex: 190 }} role="dialog" aria-modal="true" aria-label="Become a member" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 420, position: "relative" }}>
             <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
-            <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>You're putting in the reps</div>
-            <h2 className="font-display font-bold text-2xl leading-tight mb-2">Accelerate your training.</h2>
-            <p className="text-sm text-mute leading-relaxed mb-4">Free practice keeps your ear warm. The guided curriculum is what moves you forward on purpose, level by level. Members get:</p>
+            <h2 className="font-display font-bold text-2xl leading-tight mb-4">Become a member for access to the full program</h2>
             <div className="mb-5"><MemberBenefits /></div>
             <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
             <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Not now</button>
@@ -1445,12 +1393,11 @@
     function MemberCard({ onStartWeek1 }) {
       return (
         <div className="card p-5" style={{ borderColor: "var(--accent)" }}>
-          <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>Accelerate with membership</div>
-          <p className="text-sm text-ink-2 leading-relaxed mb-3">Practice keeps your ear warm. The guided curriculum gets you there faster, one level at a time.</p>
+          <div className="font-display font-semibold text-base leading-snug mb-3">Become a member for access to the full program</div>
           <div className="mb-4"><MemberBenefits compact /></div>
           <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
           {onStartWeek1 && (
-            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Or try the free guided Week 1 →</button>
+            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Try the free guided Week 1 →</button>
           )}
         </div>
       );
@@ -3073,10 +3020,7 @@
                   </>
                 ) : freeWeekOneDone ? (
                   <>
-                    <div className="text-xs font-mono py-4 px-3 mb-2 text-center" style={{ background: 'var(--accent)', color: '#0d0d0e' }}>
-                      FOUNDATIONS WEEK 1 COMPLETE
-                    </div>
-                    <button className="btn btn-solid w-full" onClick={onFreeContinue}>See what's next →</button>
+                    <button className="btn btn-solid w-full" onClick={onFreeContinue}>Continue</button>
                     <button className="btn btn-ghost w-full" onClick={onClose}>Repeat This Task</button>
                   </>
                 ) : (
@@ -3824,9 +3768,7 @@
               {/* Free taste: after Week 1, the rest of the path is a membership prompt. */}
               {freeTaste && (
                 <div className="mt-8 pt-6 border-t rule">
-                  <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>Weeks 2 to 15 and beyond</div>
-                  <div className="font-display font-semibold text-lg mb-2">Open the full guided path</div>
-                  <p className="text-sm text-mute leading-relaxed mb-4 max-w-xl">Week 1 is yours to keep. Membership unlocks the rest of Foundations plus Advanced and Mastery, and the Compression trainer, so your ear keeps moving forward on a plan.</p>
+                  <div className="font-display font-semibold text-lg mb-4">Become a member for access to the full program</div>
                   <div className="mb-5 max-w-xl"><MemberBenefits /></div>
                   <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>Become a Member →</a>
                 </div>
@@ -5311,17 +5253,19 @@
 
       // Keyboard shortcuts state
       const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
-      const [showNewsletter, setShowNewsletter] = useState(false);
-      // Free tier upgrade prompts: the Week 1 completion gate and the returning-visitor nudge.
+      // Free tier upgrade prompts: the Week 1 email gate and the returning-visitor nudge.
       const [showWeekGate, setShowWeekGate] = useState(false);
       const [showMemberNudge, setShowMemberNudge] = useState(false);
-      // Free build: after a short taste (~6 answers), show the guide popup once per visitor.
-      // Skip it if they already subscribed (the Week 1 gate or a prior prompt captured them).
+      // Free build: the Week 1 taste ends in a hard email gate. A visitor who finished
+      // Week 1 but has not given their email must do so before continuing to use the
+      // tool, so re-open the gate on load. Fires once audio is ready so it lands over
+      // the app, not the loading screen. Subscribers are never re-gated.
       useEffect(() => {
-        if (IS_FREE && sessionTotal >= 6 && !STORAGE.get("nlSeen", false) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
-          setShowNewsletter(true); STORAGE.set("nlSeen", true);
+        if (!IS_FREE || !audioReady) return;
+        if (freeTasteComplete(progress) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+          setShowWeekGate(true);
         }
-      }, [sessionTotal]);
+      }, [audioReady]);
 
       // Free build: count visits once per load, so returning practicers can be nudged
       // toward membership on a throttle (see maybeNudgeAfterPractice).
@@ -5490,7 +5434,6 @@
           <h1 className="sr-only">Ear Training Lab, Equalization</h1>
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
           {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} onUnlockFresh={() => { bootFreshRef.current = true; initializeAudio(); }} isLoading={audioLoading} error={audioError} />}
-          {showNewsletter && <NewsletterModal onClose={() => setShowNewsletter(false)} />}
           {showTour && (
             <Walkthrough
               onClose={() => setShowTour(false)}
@@ -6564,7 +6507,7 @@
           <main className="max-w-lg mx-auto px-6 py-20 text-center">
             <div className="eyebrow mb-4">Members only</div>
             <h2 className="font-display font-bold text-3xl leading-tight mb-4">Compression training is for members only</h2>
-            <p className="text-mute leading-relaxed mb-8">The compression ear trainer is for Audio University members. The EQ trainer here is free to use.</p>
+            <p className="text-mute leading-relaxed mb-8">Become a member for access to the full program. The EQ training here is free to use.</p>
             <div className="flex items-center justify-center gap-3 flex-wrap">
               <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>Become a Member →</a>
               <button className="btn btn-ghost" onClick={() => onSwitchModule("eq")}>Back to EQ</button>
