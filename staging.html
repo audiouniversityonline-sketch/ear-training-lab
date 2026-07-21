@@ -810,24 +810,20 @@
     const FREE_TASTE_WEEK = 1;
     const FREE_TASTE_CURRICULUM = {
       id: FREE_TASTE_LEVEL,
-      name: "Free taste",
-      subtitle: "A three-part taste of frequency ear training",
+      name: "Free exercises",
+      subtitle: "Three free ear training sets across the frequency spectrum",
       weeks: [{
         week: FREE_TASTE_WEEK,
-        lessonTitle: "Free taste",
+        lessonTitle: "Free exercises",
         circleLessonId: null,
         tasks: [
-          { name: "Mids (250 Hz to 4 kHz)",  mode: "Matching", freqSet: "mids_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 3 },
-          { name: "Lows (63 Hz to 250 Hz)",  mode: "Matching", freqSet: "lows_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 3 },
-          { name: "Highs (4 kHz to 16 kHz)", mode: "Matching", freqSet: "highs_octaves", bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 3 }
+          { name: "Mids (250 Hz to 4 kHz)",  mode: "Matching", freqSet: "mids_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 5 },
+          { name: "Lows (63 Hz to 250 Hz)",  mode: "Matching", freqSet: "lows_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 5 },
+          { name: "Highs (4 kHz to 16 kHz)", mode: "Matching", freqSet: "highs_octaves", bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 5 }
         ]
       }]
     };
     const isFreeTasteSpot = (levelId, week) => Number(levelId) === FREE_TASTE_LEVEL && Number(week) === FREE_TASTE_WEEK;
-    // Hard email gate: a non-member gets this many answered questions as a taste, then
-    // the gate fires and blocks further use until they give their email. Counted
-    // persistently (see FREE_FLAGS.answered) so reloading cannot farm more free reps.
-    const FREE_TASTE_QUESTIONS = 8;
     // What membership adds, shown wherever we prompt a free user to upgrade. One list,
     // reused, so the pitch stays consistent.
     const MEMBER_BENEFITS = [
@@ -837,7 +833,7 @@
     ];
     // Free-tier email + engagement flags (localStorage). nlSubscribed is set once the
     // Kit form succeeds so we never ask the same visitor twice.
-    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges", answered: "freeAnswered" };
+    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges" };
     // Preview mode: ?preview=1 turns off the level entry gate and week drip so
     // curriculum can be tested end to end. STAGING ONLY by construction: the flag
     // requires "staging" in the path, so lab.html?preview=1 does nothing for
@@ -1343,15 +1339,13 @@
       );
     }
 
-    // Hard email gate at the end of the free Week 1 taste. Step 1 requires an email to
-    // continue: no skip, no dismiss. Step 2 is the membership call to action and is
-    // dismissible. A visitor who already gave their email opens straight on step 2.
-    function WeekOneGate({ onClose }) {
-      // NOTE: this component lives above the App-scoped STORAGE helper, so it reads and
-      // writes localStorage directly with the same JSON semantics STORAGE uses (the flag
-      // is stored as the string "true").
-      const alreadySub = (() => { try { return localStorage.getItem(FREE_FLAGS.subscribed) === "true"; } catch (e) { return false; } })();
-      const [step, setStep] = useState(alreadySub ? "pitch" : "email");
+    // Hard email gate, shown after the first free set. Email is required to continue:
+    // no skip, no dismiss. On submit it records the email and calls onDone, which moves
+    // the user on to the next set. The membership pitch is separate (MemberNudge), shown
+    // after the last set.
+    function EmailGate({ onDone }) {
+      // NOTE: this component lives above the App-scoped STORAGE helper, so it writes
+      // localStorage directly with the same JSON semantics STORAGE uses.
       const [firstName, setFirstName] = useState("");
       const [email, setEmail] = useState("");
       const [err, setErr] = useState("");
@@ -1361,38 +1355,24 @@
         if (!isValidEmail(email)) { setErr("email"); return; }
         submitToKit(email, firstName);
         try { localStorage.setItem(FREE_FLAGS.subscribed, "true"); } catch (e) {}
-        setStep("pitch");
+        onDone();
       };
       return (
         <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Add your email to continue" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 440, position: "relative" }}>
-            {step === "pitch" && (
-              <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
-            )}
-            {step === "email" ? (
-              <>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Add your email to continue</h2>
-                <p className="text-sm text-mute leading-relaxed mb-4">We'll send you the Ear Training Guide, and you can keep practicing for free.</p>
-                <div className="flex flex-col gap-2">
-                  <input type="text" autoComplete="given-name" placeholder="First name" value={firstName}
-                    onChange={(e) => { setFirstName(e.target.value); if (err === "name") setErr(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "name")} />
-                  <input type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email}
-                    onChange={(e) => { setEmail(e.target.value); if (err === "email") setErr(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "email")} />
-                </div>
-                {err === "name" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>Please add your first name.</div>}
-                {err === "email" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
-                <button onClick={submit} className="btn btn-solid w-full mt-4">Continue</button>
-              </>
-            ) : (
-              <>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-4">Become a member for access to the full program</h2>
-                <div className="mb-5"><MemberBenefits /></div>
-                <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
-                <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Keep practicing free</button>
-              </>
-            )}
+            <h2 className="font-display font-bold text-2xl leading-tight mb-2">Add your email to continue</h2>
+            <p className="text-sm text-mute leading-relaxed mb-4">We'll send you the Ear Training Guide, and you can keep practicing for free.</p>
+            <div className="flex flex-col gap-2">
+              <input type="text" autoComplete="given-name" placeholder="First name" value={firstName}
+                onChange={(e) => { setFirstName(e.target.value); if (err === "name") setErr(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "name")} />
+              <input type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email}
+                onChange={(e) => { setEmail(e.target.value); if (err === "email") setErr(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "email")} />
+            </div>
+            {err === "name" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>Please add your first name.</div>}
+            {err === "email" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
+            <button onClick={submit} className="btn btn-solid w-full mt-4">Continue</button>
           </div>
         </div>
       );
@@ -1422,7 +1402,7 @@
           <div className="mb-4"><MemberBenefits compact /></div>
           <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
           {onStartWeek1 && (
-            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Start the free taste →</button>
+            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Start the free exercises →</button>
           )}
         </div>
       );
@@ -3003,7 +2983,7 @@
        TASK COMPLETE MODAL
        ============================================================ */
 
-    function TaskCompleteModal({ data, onClose, onNextTask, hasNextTask, onOpenManual, freeWeekOneDone, onFreeContinue }) {
+    function TaskCompleteModal({ data, onClose, onNextTask, hasNextTask, onOpenManual }) {
       if (!data) return null;
       const pct = data.accuracy;
       const remark =
@@ -3050,11 +3030,6 @@
                 ) : hasNextTask ? (
                   <>
                     <button className="btn btn-solid w-full" onClick={onNextTask}>Continue to Next Task</button>
-                    <button className="btn btn-ghost w-full" onClick={onClose}>Repeat This Task</button>
-                  </>
-                ) : freeWeekOneDone ? (
-                  <>
-                    <button className="btn btn-solid w-full" onClick={onFreeContinue}>Continue</button>
                     <button className="btn btn-ghost w-full" onClick={onClose}>Repeat This Task</button>
                   </>
                 ) : (
@@ -3608,7 +3583,7 @@
       const headerTitle = viewLevelLocked && lockedLevel
         ? lockedLevel.name
         : freeTaste
-          ? "Free taste"
+          ? "Free exercises"
           : (activeLevel?.name ? `${activeLevel.name} · ${weeks.length} Levels` : "Levels");
 
       return (
@@ -3691,7 +3666,7 @@
               {/* Free taste is a single set of three; hide the multi-week grid (and the
                   course names it would show). Members get the full week grid. */}
               {freeTaste ? (
-                <p className="text-sm text-mute leading-relaxed mb-6 max-w-xl">Three quick sets to sample the training across the frequency spectrum. Tap one to start.</p>
+                <p className="text-sm text-mute leading-relaxed mb-6 max-w-xl">Three short sets across the low, mid, and high frequencies. Tap one to start.</p>
               ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-8">
                 {weeks.map(w => {
@@ -3979,7 +3954,7 @@
       const bootFreshRef = useRef(false);
       // First-boot guard for the free tier's landing decision (guided Week 1 vs Practice).
       const didFreeBootRef = useRef(false);
-      // Free tier: has the visitor finished every task in the Week 1 taste?
+      // Free tier: has the visitor finished every set in the free exercises?
       const freeTasteComplete = (prog) => {
         const lv = (CURRICULUM.levels || []).find(l => l.id === FREE_TASTE_LEVEL);
         const wp = lv && (lv.weeks || []).find(w => w.week === FREE_TASTE_WEEK);
@@ -3987,6 +3962,14 @@
         const wprog = getLevelProgress(prog, FREE_TASTE_LEVEL)[FREE_TASTE_WEEK] || {};
         return wp.tasks.every((_, i) => { const e = readProgress(wprog[i]); return !!(e && e.completed); });
       };
+      // Free tier: has the visitor finished the FIRST set (the gate fires right after it)?
+      const freeSet1Done = (prog) => {
+        const wprog = getLevelProgress(prog, FREE_TASTE_LEVEL)[FREE_TASTE_WEEK] || {};
+        const e = readProgress(wprog[0]);
+        return !!(e && e.completed);
+      };
+      // Index of the last free set, so we know when to show the membership pitch.
+      const FREE_LAST_SET = ((FREE_TASTE_CURRICULUM.weeks[0] || {}).tasks || []).length - 1;
       const [audioLoading, setAudioLoading] = useState(false);
       const [audioError, setAudioError] = useState(null);
       const [isPlaying, setIsPlaying] = useState(false);
@@ -4936,14 +4919,6 @@
         const nextQ = qInRound + 1;
         setQInRound(nextQ);
         setSessionTotal(t => t + 1);
-        // Free tier: count answered questions toward the hard email gate. Persistent so
-        // reloading can't farm more free reps; once the taste is used up (and they have
-        // not subscribed) the gate opens and blocks further use.
-        if (IS_FREE && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
-          const answered = (Number(STORAGE.get(FREE_FLAGS.answered, 0)) || 0) + 1;
-          STORAGE.set(FREE_FLAGS.answered, answered);
-          if (answered >= FREE_TASTE_QUESTIONS) setShowWeekGate(true);
-        }
         if (correct) {
           setRoundCorrect(rc => rc + 1);
           setSessionCorrect(sc => sc + 1);
@@ -4997,7 +4972,18 @@
             if (IS_FREE && isManualSession) {
               try { STORAGE.set("freePracticeDone", (Number(STORAGE.get("freePracticeDone", 0)) || 0) + 1); } catch (e) {}
             }
-            setShowTaskComplete(true);
+            // Free exercises flow: the email gate fires right after the FIRST set (and blocks
+            // continuing until they subscribe); the membership pitch fires after the LAST set.
+            // Everything else shows the normal completion card.
+            const onFreeExercises = IS_FREE && !isManualSession && task && isFreeTasteSpot(currentLevelId, curriculumWeek);
+            const subscribed = STORAGE.get(FREE_FLAGS.subscribed, false);
+            if (onFreeExercises && curriculumTaskIndex === 0 && !subscribed) {
+              setShowEmailGate(true);
+            } else if (onFreeExercises && curriculumTaskIndex >= FREE_LAST_SET) {
+              setShowMemberNudge(true);
+            } else {
+              setShowTaskComplete(true);
+            }
           }
           setRoundCorrect(0);
         }
@@ -5308,18 +5294,17 @@
 
       // Keyboard shortcuts state
       const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
-      // Free tier upgrade prompts: the Week 1 email gate and the returning-visitor nudge.
-      const [showWeekGate, setShowWeekGate] = useState(false);
+      // Free tier upgrade prompts: the email gate (after set 1) and the membership pitch.
+      const [showEmailGate, setShowEmailGate] = useState(false);
       const [showMemberNudge, setShowMemberNudge] = useState(false);
-      // Free build: hard email gate. A visitor who has used up the free taste (answered
-      // FREE_TASTE_QUESTIONS) but has not given their email is re-gated on load, so they
-      // cannot reload past it. Fires once audio is ready so it lands over the app, not
-      // the loading screen. Subscribers are never re-gated.
+      // Free build: hard email gate. A visitor who finished the first set but has not
+      // given their email is re-gated on load, so they cannot reload past it. Fires once
+      // audio is ready so it lands over the app, not the loading screen. Subscribers are
+      // never re-gated.
       useEffect(() => {
         if (!IS_FREE || !audioReady) return;
-        const answered = Number(STORAGE.get(FREE_FLAGS.answered, 0)) || 0;
-        if (answered >= FREE_TASTE_QUESTIONS && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
-          setShowWeekGate(true);
+        if (freeSet1Done(progress) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+          setShowEmailGate(true);
         }
       }, [audioReady]);
 
@@ -5503,11 +5488,11 @@
               onNextTask={() => { loadNextTask(); setShowTaskComplete(false); }}
               hasNextTask={nextTaskExists}
               onOpenManual={() => setShowManualSetup(true)}
-              freeWeekOneDone={IS_FREE && !nextTaskExists && taskCompleteData && !taskCompleteData.isManual && Number(taskCompleteData.week) === FREE_TASTE_WEEK}
-              onFreeContinue={() => { setShowTaskComplete(false); setShowWeekGate(true); }}
             />
           )}
-          {showWeekGate && <WeekOneGate onClose={() => setShowWeekGate(false)} />}
+          {/* Email gate fires after the first free set; on submit it moves the user to the
+              next set. No skip, no close. */}
+          {showEmailGate && <EmailGate onDone={() => { setShowEmailGate(false); loadNextTask(); }} />}
           {showMemberNudge && <MemberNudge onClose={() => setShowMemberNudge(false)} />}
           {showKeyboardHelp && <KeyboardHelpOverlay onClose={() => setShowKeyboardHelp(false)} />}
           {showManualSetup && (
@@ -5698,7 +5683,7 @@
                     <div className="font-mono text-[10px] uppercase tracking-wider text-mute">
                       {!isManualSession && currentTask
                         ? (isFreeTasteSpot(currentLevelId, curriculumWeek)
-                            ? "Free taste · Set " + (curriculumTaskIndex + 1) + " of 3" + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : "")
+                            ? "Free exercises · Set " + (curriculumTaskIndex + 1) + " of 3" + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : "")
                             : ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : ""))
                         : "Custom Practice"}
                     </div>
