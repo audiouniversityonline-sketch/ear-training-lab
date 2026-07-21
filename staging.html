@@ -800,8 +800,29 @@
     // Free tier gives a real taste of the guided path: Foundations (level 1), Week 1
     // only. Everything past it is a membership prompt. Centralized so the taste can
     // be widened later (e.g. all of Foundations) by changing these two constants.
-    const FREE_TASTE_LEVEL = 1;
+    // The free taste is a standalone three-part set (mids, lows, highs) that shows the
+    // SHAPE of the training without exposing any of the real course lessons or their
+    // names (which a free user could otherwise copy into Custom Practice). It is a
+    // synthetic level injected only into the free build; members never see it. Band
+    // ranges map to existing FREQ_SETS: mids_octaves 250-4k, lows_octaves 63-250,
+    // highs_octaves 4k-16k.
+    const FREE_TASTE_LEVEL = 0;
     const FREE_TASTE_WEEK = 1;
+    const FREE_TASTE_CURRICULUM = {
+      id: FREE_TASTE_LEVEL,
+      name: "Free taste",
+      subtitle: "A three-part taste of frequency ear training",
+      weeks: [{
+        week: FREE_TASTE_WEEK,
+        lessonTitle: "Free taste",
+        circleLessonId: null,
+        tasks: [
+          { name: "Mids (250 Hz to 4 kHz)",  mode: "Matching", freqSet: "mids_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 3 },
+          { name: "Lows (63 Hz to 250 Hz)",  mode: "Matching", freqSet: "lows_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 3 },
+          { name: "Highs (4 kHz to 16 kHz)", mode: "Matching", freqSet: "highs_octaves", bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 3 }
+        ]
+      }]
+    };
     const isFreeTasteSpot = (levelId, week) => Number(levelId) === FREE_TASTE_LEVEL && Number(week) === FREE_TASTE_WEEK;
     // Hard email gate: a non-member gets this many answered questions as a taste, then
     // the gate fires and blocks further use until they give their email. Counted
@@ -1401,7 +1422,7 @@
           <div className="mb-4"><MemberBenefits compact /></div>
           <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
           {onStartWeek1 && (
-            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Try the free guided Week 1 →</button>
+            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Start the free taste →</button>
           )}
         </div>
       );
@@ -2660,7 +2681,16 @@
       };
     }
 
-    let CURRICULUM = normalizeCurriculum(INLINE_CURRICULUM_DEFAULT);
+    // Free build only: prepend the synthetic taste level so all the existing task-load,
+    // auto-advance, progress, and gate machinery drives it, while members never get it.
+    function withFreeTaste(cur) {
+      if (IS_FREE && cur && Array.isArray(cur.levels) && !cur.levels.some(l => l.id === FREE_TASTE_LEVEL)) {
+        cur.levels = [FREE_TASTE_CURRICULUM, ...cur.levels];
+      }
+      return cur;
+    }
+
+    let CURRICULUM = withFreeTaste(normalizeCurriculum(INLINE_CURRICULUM_DEFAULT));
 
     /*
      * STAGING SPLIT: Level 3 is a draft, so it lives in `curriculum-v3.json` (3 levels)
@@ -2680,7 +2710,7 @@
         const res = await fetch(CURRICULUM_FILE, { cache: 'no-store' });
         if (!res.ok) throw new Error('Curriculum fetch failed: ' + res.status);
         const data = await res.json();
-        CURRICULUM = normalizeCurriculum(data);
+        CURRICULUM = withFreeTaste(normalizeCurriculum(data));
       } catch (err) {
         // Inline default already loaded — log and continue.
         console.warn('[Ear Training Lab] Using inline curriculum default:', err.message);
@@ -3577,7 +3607,9 @@
 
       const headerTitle = viewLevelLocked && lockedLevel
         ? lockedLevel.name
-        : (activeLevel?.name ? `${activeLevel.name} · ${weeks.length} Levels` : "Levels");
+        : freeTaste
+          ? "Free taste"
+          : (activeLevel?.name ? `${activeLevel.name} · ${weeks.length} Levels` : "Levels");
 
       return (
         <div className={inline ? "max-w-3xl mx-auto w-full px-4 sm:px-6 py-8" : "overlay"} onClick={inline ? undefined : onClose}>
@@ -3656,6 +3688,11 @@
               {/* ========== ACTIVE LEVEL: WEEK GRID + TASK LIST ========== */}
               {!viewLevelLocked && activeLevel && !entryGate.locked && (
               <div>
+              {/* Free taste is a single set of three; hide the multi-week grid (and the
+                  course names it would show). Members get the full week grid. */}
+              {freeTaste ? (
+                <p className="text-sm text-mute leading-relaxed mb-6 max-w-xl">Three quick sets to sample the training across the frequency spectrum. Tap one to start.</p>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-8">
                 {weeks.map(w => {
                   const locked = weekLocked(w.week);
@@ -3675,15 +3712,18 @@
                   );
                 })}
               </div>
+              )}
 
               {weekPlan && (
-                <div className="border-t rule pt-6">
+                <div className={freeTaste ? "" : "border-t rule pt-6"}>
+                  {!freeTaste && (
                   <div className="flex items-baseline justify-between mb-3">
                     <div className="eyebrow">Level {weekPlan.week} Tasks</div>
                     <div className="text-xs text-mute leading-relaxed hidden sm:block max-w-sm text-right">
                       Tap a task to start it. Use "Mark complete" for tasks you already finished before this update.
                     </div>
                   </div>
+                  )}
                   <div className="flex flex-col gap-2">
                     {weekPlan.tasks.map((t, i) => {
                       const entry = readProgress(levelProgress[weekPlan.week]?.[i]);
@@ -3736,7 +3776,9 @@
                             </div>
                           </button>
 
-                          {/* Mark / unmark action — separate button to avoid nested click handlers */}
+                          {/* Mark / unmark action — separate button to avoid nested click handlers.
+                              Not shown for the free taste (nothing to backfill). */}
+                          {!freeTaste && (
                           <div className="flex-shrink-0 border-l rule flex items-stretch">
                             {isDone ? (
                               <button
@@ -3762,6 +3804,7 @@
                               </button>
                             )}
                           </div>
+                          )}
                         </div>
                       );
                     })}
@@ -5654,7 +5697,9 @@
                   <section className="mb-4">
                     <div className="font-mono text-[10px] uppercase tracking-wider text-mute">
                       {!isManualSession && currentTask
-                        ? ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : "")
+                        ? (isFreeTasteSpot(currentLevelId, curriculumWeek)
+                            ? "Free taste · Set " + (curriculumTaskIndex + 1) + " of 3" + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : "")
+                            : ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : ""))
                         : "Custom Practice"}
                     </div>
                     <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: "var(--accent-ink)" }}>
