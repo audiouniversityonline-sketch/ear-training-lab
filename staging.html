@@ -803,6 +803,10 @@
     const FREE_TASTE_LEVEL = 1;
     const FREE_TASTE_WEEK = 1;
     const isFreeTasteSpot = (levelId, week) => Number(levelId) === FREE_TASTE_LEVEL && Number(week) === FREE_TASTE_WEEK;
+    // Hard email gate: a non-member gets this many answered questions as a taste, then
+    // the gate fires and blocks further use until they give their email. Counted
+    // persistently (see FREE_FLAGS.answered) so reloading cannot farm more free reps.
+    const FREE_TASTE_QUESTIONS = 8;
     // What membership adds, shown wherever we prompt a free user to upgrade. One list,
     // reused, so the pitch stays consistent.
     const MEMBER_BENEFITS = [
@@ -812,7 +816,7 @@
     ];
     // Free-tier email + engagement flags (localStorage). nlSubscribed is set once the
     // Kit form succeeds so we never ask the same visitor twice.
-    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges" };
+    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges", answered: "freeAnswered" };
     // Preview mode: ?preview=1 turns off the level entry gate and week drip so
     // curriculum can be tested end to end. STAGING ONLY by construction: the flag
     // requires "staging" in the path, so lab.html?preview=1 does nothing for
@@ -4889,6 +4893,14 @@
         const nextQ = qInRound + 1;
         setQInRound(nextQ);
         setSessionTotal(t => t + 1);
+        // Free tier: count answered questions toward the hard email gate. Persistent so
+        // reloading can't farm more free reps; once the taste is used up (and they have
+        // not subscribed) the gate opens and blocks further use.
+        if (IS_FREE && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+          const answered = (Number(STORAGE.get(FREE_FLAGS.answered, 0)) || 0) + 1;
+          STORAGE.set(FREE_FLAGS.answered, answered);
+          if (answered >= FREE_TASTE_QUESTIONS) setShowWeekGate(true);
+        }
         if (correct) {
           setRoundCorrect(rc => rc + 1);
           setSessionCorrect(sc => sc + 1);
@@ -5256,13 +5268,14 @@
       // Free tier upgrade prompts: the Week 1 email gate and the returning-visitor nudge.
       const [showWeekGate, setShowWeekGate] = useState(false);
       const [showMemberNudge, setShowMemberNudge] = useState(false);
-      // Free build: the Week 1 taste ends in a hard email gate. A visitor who finished
-      // Week 1 but has not given their email must do so before continuing to use the
-      // tool, so re-open the gate on load. Fires once audio is ready so it lands over
-      // the app, not the loading screen. Subscribers are never re-gated.
+      // Free build: hard email gate. A visitor who has used up the free taste (answered
+      // FREE_TASTE_QUESTIONS) but has not given their email is re-gated on load, so they
+      // cannot reload past it. Fires once audio is ready so it lands over the app, not
+      // the loading screen. Subscribers are never re-gated.
       useEffect(() => {
         if (!IS_FREE || !audioReady) return;
-        if (freeTasteComplete(progress) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+        const answered = Number(STORAGE.get(FREE_FLAGS.answered, 0)) || 0;
+        if (answered >= FREE_TASTE_QUESTIONS && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
           setShowWeekGate(true);
         }
       }, [audioReady]);
