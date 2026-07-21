@@ -797,6 +797,23 @@
     // Free build: served as lab.html?free=1 (paid build is plain lab.html, unaffected).
     // Free = limited EQ (Practice + Learn; the guided course is members-only) and no Compression.
     const IS_FREE = (typeof window !== "undefined") && (window.AU_FREE === true || (function () { try { return new URLSearchParams(window.location.search).get("free") === "1"; } catch (e) { return false; } })());
+    // Free tier gives a real taste of the guided path: Foundations (level 1), Week 1
+    // only. Everything past it is a membership prompt. Centralized so the taste can
+    // be widened later (e.g. all of Foundations) by changing these two constants.
+    const FREE_TASTE_LEVEL = 1;
+    const FREE_TASTE_WEEK = 1;
+    const isFreeTasteSpot = (levelId, week) => Number(levelId) === FREE_TASTE_LEVEL && Number(week) === FREE_TASTE_WEEK;
+    // What membership adds, shown wherever we prompt a free user to upgrade. One list,
+    // reused, so the pitch stays consistent.
+    const MEMBER_BENEFITS = [
+      "The full 15-week EQ curriculum: Foundations, Advanced, and Mastery",
+      "The Compression ear trainer and its guided levels",
+      "Your progress and streaks saved as you advance",
+      "New levels and real program material as they ship"
+    ];
+    // Free-tier email + engagement flags (localStorage). nlSubscribed is set once the
+    // Kit form succeeds so we never ask the same visitor twice.
+    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges" };
     // Preview mode: ?preview=1 turns off the level entry gate and week drip so
     // curriculum can be tested end to end. STAGING ONLY by construction: the flag
     // requires "staging" in the path, so lab.html?preview=1 does nothing for
@@ -1330,6 +1347,111 @@
               </>
             )}
           </div>
+        </div>
+      );
+    }
+
+    // Shared benefits list. One source of truth for the upgrade pitch, reused by the
+    // Week 1 gate, the returning-visitor nudge, and the persistent Practice card.
+    function MemberBenefits({ compact }) {
+      return (
+        <ul className="flex flex-col gap-2" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {MEMBER_BENEFITS.map((b, i) => (
+            <li key={i} className="flex items-start gap-2" style={{ fontSize: compact ? 12 : 13, lineHeight: 1.5, color: "var(--ink-2)" }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--accent)" strokeWidth="1.6" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
+                <path d="M2.5 7.5l3 3 6-7" />
+              </svg>
+              <span>{b}</span>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    // Week 1 complete gate for free users. Two steps: capture the email at the moment
+    // of accomplishment (skippable), then the membership pitch. Once a visitor has
+    // subscribed, it opens straight on the pitch. This is the email-to-continue moment.
+    function WeekOneGate({ onClose }) {
+      const alreadySub = (() => { try { return !!STORAGE.get(FREE_FLAGS.subscribed, false); } catch (e) { return false; } })();
+      const [step, setStep] = useState(alreadySub ? "pitch" : "email");
+      const [firstName, setFirstName] = useState("");
+      const [email, setEmail] = useState("");
+      const [err, setErr] = useState("");
+      const field = (bad) => ({ width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 14, background: "var(--panel-2)", color: "var(--ink)", borderRadius: 8, border: "1px solid " + (bad ? "var(--hot)" : "var(--line-2)"), outline: "none" });
+      const submit = () => {
+        if (!firstName.trim()) { setErr("name"); return; }
+        if (!isValidEmail(email)) { setErr("email"); return; }
+        submitToKit(email, firstName);
+        try { STORAGE.set(FREE_FLAGS.subscribed, true); } catch (e) {}
+        setStep("pitch");
+      };
+      return (
+        <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Week 1 complete" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+          <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 440, position: "relative" }}>
+            <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
+            {step === "email" ? (
+              <>
+                <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>Foundations Week 1 complete</div>
+                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Nice work. Keep sharpening your ear.</h2>
+                <p className="text-sm text-mute leading-relaxed mb-4">Add your email and we'll send the Ear Training Guide plus new drills as they land. Then keep practicing free, or open the full path below.</p>
+                <div className="flex flex-col gap-2">
+                  <input type="text" autoComplete="given-name" placeholder="First name" value={firstName}
+                    onChange={(e) => { setFirstName(e.target.value); if (err === "name") setErr(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "name")} />
+                  <input type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email}
+                    onChange={(e) => { setEmail(e.target.value); if (err === "email") setErr(""); }}
+                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "email")} />
+                </div>
+                {err === "name" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>Please add your first name.</div>}
+                {err === "email" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
+                <button onClick={submit} className="btn btn-solid w-full mt-4">Send it and continue</button>
+                <button onClick={() => setStep("pitch")} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Skip for now</button>
+              </>
+            ) : (
+              <>
+                <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>You've got the idea</div>
+                <h2 className="font-display font-bold text-2xl leading-tight mb-2">That was Week 1 of 15.</h2>
+                <p className="text-sm text-mute leading-relaxed mb-4">You just ran the first week of the guided path. Members keep going with the structured course that trains your ear faster than practicing on your own.</p>
+                <div className="mb-5"><MemberBenefits /></div>
+                <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
+                <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Keep practicing free</button>
+              </>
+            )}
+          </div>
+        </div>
+      );
+    }
+
+    // Returning-visitor reminder. Dismissible, throttled by the caller, and framed
+    // around accelerating the work they are already putting in.
+    function MemberNudge({ onClose }) {
+      return (
+        <div className="overlay" style={{ zIndex: 190 }} role="dialog" aria-modal="true" aria-label="Accelerate your training" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+          <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 420, position: "relative" }}>
+            <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
+            <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>You're putting in the reps</div>
+            <h2 className="font-display font-bold text-2xl leading-tight mb-2">Accelerate your training.</h2>
+            <p className="text-sm text-mute leading-relaxed mb-4">Free practice keeps your ear warm. The guided curriculum is what moves you forward on purpose, level by level. Members get:</p>
+            <div className="mb-5"><MemberBenefits /></div>
+            <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
+            <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Not now</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Persistent, low-key membership card for the free Practice view. Always present,
+    // never a popup, so it reminds without interrupting.
+    function MemberCard({ onStartWeek1 }) {
+      return (
+        <div className="card p-5" style={{ borderColor: "var(--accent)" }}>
+          <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>Accelerate with membership</div>
+          <p className="text-sm text-ink-2 leading-relaxed mb-3">Practice keeps your ear warm. The guided curriculum gets you there faster, one level at a time.</p>
+          <div className="mb-4"><MemberBenefits compact /></div>
+          <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
+          {onStartWeek1 && (
+            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Or try the free guided Week 1 →</button>
+          )}
         </div>
       );
     }
@@ -2900,7 +3022,7 @@
        TASK COMPLETE MODAL
        ============================================================ */
 
-    function TaskCompleteModal({ data, onClose, onNextTask, hasNextTask, onOpenManual }) {
+    function TaskCompleteModal({ data, onClose, onNextTask, hasNextTask, onOpenManual, freeWeekOneDone, onFreeContinue }) {
       if (!data) return null;
       const pct = data.accuracy;
       const remark =
@@ -2947,6 +3069,14 @@
                 ) : hasNextTask ? (
                   <>
                     <button className="btn btn-solid w-full" onClick={onNextTask}>Continue to Next Task</button>
+                    <button className="btn btn-ghost w-full" onClick={onClose}>Repeat This Task</button>
+                  </>
+                ) : freeWeekOneDone ? (
+                  <>
+                    <div className="text-xs font-mono py-4 px-3 mb-2 text-center" style={{ background: 'var(--accent)', color: '#0d0d0e' }}>
+                      FOUNDATIONS WEEK 1 COMPLETE
+                    </div>
+                    <button className="btn btn-solid w-full" onClick={onFreeContinue}>See what's next →</button>
                     <button className="btn btn-ghost w-full" onClick={onClose}>Repeat This Task</button>
                   </>
                 ) : (
@@ -3441,11 +3571,15 @@
     function CurriculumPicker({
       currentLevelId, currentWeek, currentTaskIndex,
       onSelectLevel, onSelectWeek, onSelectTask,
-      progress, onClose, onMarkComplete, onUnmarkComplete, onOpenManual, inline
+      progress, onClose, onMarkComplete, onUnmarkComplete, onOpenManual, inline, freeTaste
     }) {
-      const activeLevels = CURRICULUM.levels || [];
+      // Free taste: show only Foundations, only Week 1 playable, the rest as a
+      // membership prompt. Members (freeTaste=false) see the full picker unchanged.
+      const activeLevels = freeTaste
+        ? (CURRICULUM.levels || []).filter(l => l.id === FREE_TASTE_LEVEL)
+        : (CURRICULUM.levels || []);
       const lockedLevels = CURRICULUM.lockedLevels || [];
-      const [viewLevelId, setViewLevelId] = useState(currentLevelId);
+      const [viewLevelId, setViewLevelId] = useState(freeTaste ? FREE_TASTE_LEVEL : currentLevelId);
       const [viewLevelLocked, setViewLevelLocked] = useState(false);
       const [selectedWeek, setSelectedWeek] = useState(currentWeek);
 
@@ -3467,7 +3601,15 @@
         if (!entryGate.locked && settleWeekUnlocks(activeLevel, levelProgress)) setUnlockTick(t => t + 1);
       }, [viewLevelId, progress, entryGate.locked]);
       const unlockMap = weekUnlockStatus(activeLevel, levelProgress);
-      const weekLocked = (weekNum) => { const u = unlockMap[weekNum]; return !!(u && !u.unlocked); };
+      const weekLocked = (weekNum) => {
+        if (freeTaste && weekNum !== FREE_TASTE_WEEK) return true;   // free taste: only Week 1 is open
+        const u = unlockMap[weekNum]; return !!(u && !u.unlocked);
+      };
+      // Reason text for a locked week card (guarded: Foundations weeks have no drip entry).
+      const weekLockReason = (weekNum) => {
+        if (freeTaste && weekNum !== FREE_TASTE_WEEK) return "Members";
+        const u = unlockMap[weekNum]; return (u && u.reason) || "Locked";
+      };
 
       const weekIsComplete = (weekNum) => {
         const weekProgress = levelProgress[weekNum];
@@ -3576,11 +3718,11 @@
                     onClick={() => { if (!locked) setSelectedWeek(w.week); }}
                     disabled={locked}
                     style={locked ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
-                    title={locked ? unlockMap[w.week].reason : undefined}
+                    title={locked ? weekLockReason(w.week) : undefined}
                   >
                     <div className="num">Level {w.week}{locked ? ' · Locked' : ''}</div>
                     <div className="title">{w.lessonTitle}</div>
-                    <div className="meta">{locked ? unlockMap[w.week].reason : (w.tasks.length + " tasks")}</div>
+                    <div className="meta">{locked ? weekLockReason(w.week) : (w.tasks.length + " tasks")}</div>
                   </button>
                   );
                 })}
@@ -3676,6 +3818,17 @@
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Free taste: after Week 1, the rest of the path is a membership prompt. */}
+              {freeTaste && (
+                <div className="mt-8 pt-6 border-t rule">
+                  <div className="eyebrow mb-2" style={{ color: "var(--accent-ink)" }}>Weeks 2 to 15 and beyond</div>
+                  <div className="font-display font-semibold text-lg mb-2">Open the full guided path</div>
+                  <p className="text-sm text-mute leading-relaxed mb-4 max-w-xl">Week 1 is yours to keep. Membership unlocks the rest of Foundations plus Advanced and Mastery, and the Compression trainer, so your ear keeps moving forward on a plan.</p>
+                  <div className="mb-5 max-w-xl"><MemberBenefits /></div>
+                  <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>Become a Member →</a>
                 </div>
               )}
 
@@ -3835,6 +3988,16 @@
       // Set when a member picks "Start a fresh practice" on the welcome screen;
       // consumed once by the task-load effect after audio comes up.
       const bootFreshRef = useRef(false);
+      // First-boot guard for the free tier's landing decision (guided Week 1 vs Practice).
+      const didFreeBootRef = useRef(false);
+      // Free tier: has the visitor finished every task in the Week 1 taste?
+      const freeTasteComplete = (prog) => {
+        const lv = (CURRICULUM.levels || []).find(l => l.id === FREE_TASTE_LEVEL);
+        const wp = lv && (lv.weeks || []).find(w => w.week === FREE_TASTE_WEEK);
+        if (!wp) return false;
+        const wprog = getLevelProgress(prog, FREE_TASTE_LEVEL)[FREE_TASTE_WEEK] || {};
+        return wp.tasks.every((_, i) => { const e = readProgress(wprog[i]); return !!(e && e.completed); });
+      };
       const [audioLoading, setAudioLoading] = useState(false);
       const [audioError, setAudioError] = useState(null);
       const [isPlaying, setIsPlaying] = useState(false);
@@ -3990,6 +4153,9 @@
         if (curriculumTaskIndex + 1 < wp.tasks.length) {
           return { week: curriculumWeek, taskIndex: curriculumTaskIndex + 1, task: wp.tasks[curriculumTaskIndex + 1] };
         }
+        // Free tier: the guided path stops at the end of the Week 1 taste. Finishing
+        // Week 1's last task has no "next task" — it triggers the membership gate.
+        if (IS_FREE) return null;
         const nextWeekPlan = getWeekPlan(curriculumWeek + 1);
         if (nextWeekPlan && nextWeekPlan.tasks.length > 0) {
           // Drip levels: never auto-advance into a week that hasn't unlocked yet.
@@ -4829,6 +4995,11 @@
               taskIndex: isManualSession ? null : curriculumTaskIndex,
               isManual: isManualSession
             });
+            // Free tier: tally finished Custom Practice sessions so the membership nudge
+            // can fire on a throttle for returning practicers.
+            if (IS_FREE && isManualSession) {
+              try { STORAGE.set("freePracticeDone", (Number(STORAGE.get("freePracticeDone", 0)) || 0) + 1); } catch (e) {}
+            }
             setShowTaskComplete(true);
           }
           setRoundCorrect(0);
@@ -4867,6 +5038,21 @@
           // applyTaskSpec sets isManualSession based on the task shape — no need to set it here.
           setTimeout(() => applyTaskSpec(nextTask.task), 100);
         }
+      };
+
+      // Free tier: jump straight into the guided Foundations Week 1 taste (used by the
+      // Practice-view membership card). Loads the task directly so it works even when
+      // the picker isn't open and even from inside a Custom Practice session.
+      const startFreeWeek1 = () => {
+        setShowCurriculum(false);
+        const lv = (CURRICULUM.levels || []).find(l => l.id === FREE_TASTE_LEVEL);
+        const wp = lv && (lv.weeks || []).find(w => w.week === FREE_TASTE_WEEK);
+        setCurrentLevelId(FREE_TASTE_LEVEL);
+        setCurriculumWeek(FREE_TASTE_WEEK);
+        setCurriculumTaskIndex(0);
+        STORAGE.set("curriculumWeek", FREE_TASTE_WEEK);
+        STORAGE.set("curriculumTaskIndex", 0);
+        if (wp && wp.tasks[0]) { modeChangeSourceRef.current = 'internal'; setTimeout(() => applyTaskSpec(wp.tasks[0]), 60); }
       };
 
       /*
@@ -5069,9 +5255,21 @@
         STORAGE.set("curriculumWeek", curriculumWeek);
         STORAGE.set("curriculumTaskIndex", curriculumTaskIndex);
         if (!audioReady) return;
-        // Free build: the guided course is members-only, so start free users in Custom
-        // Practice (free-form, doesn't touch course progression) instead of a course task.
-        if (IS_FREE && !isManualSession && !isLearnMode) { startManualSession(manualConfig); return; }
+        // Free build: the only guided task free users can run is the Week 1 taste
+        // (Foundations, Week 1). On first landing, drop a newcomer straight into that
+        // guided week (the hero of the funnel); a visitor who already finished it, or
+        // who is anywhere else, gets Custom Practice. After boot, honor explicit
+        // navigation so clicking the Week 1 tasks (even to replay) loads them.
+        if (IS_FREE && !isManualSession && !isLearnMode) {
+          const onTaste = isFreeTasteSpot(currentLevelId, curriculumWeek);
+          if (!didFreeBootRef.current) {
+            didFreeBootRef.current = true;
+            if (!(onTaste && !freeTasteComplete(progress))) { startManualSession(manualConfig); return; }
+          } else if (!onTaste) {
+            startManualSession(manualConfig); return;
+          }
+          // else: on the Week 1 taste spot — fall through and load the guided task.
+        }
         // Member chose "Start a fresh practice" on the welcome screen: open Custom
         // Practice with their saved setup instead of resuming the course task.
         if (bootFreshRef.current) { bootFreshRef.current = false; startManualSession(manualConfig); return; }
@@ -5114,10 +5312,39 @@
       // Keyboard shortcuts state
       const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
       const [showNewsletter, setShowNewsletter] = useState(false);
-      // Free build: after a short taste (~6 answers), show the newsletter popup once per visitor.
+      // Free tier upgrade prompts: the Week 1 completion gate and the returning-visitor nudge.
+      const [showWeekGate, setShowWeekGate] = useState(false);
+      const [showMemberNudge, setShowMemberNudge] = useState(false);
+      // Free build: after a short taste (~6 answers), show the guide popup once per visitor.
+      // Skip it if they already subscribed (the Week 1 gate or a prior prompt captured them).
       useEffect(() => {
-        if (IS_FREE && sessionTotal >= 6 && !STORAGE.get("nlSeen", false)) { setShowNewsletter(true); STORAGE.set("nlSeen", true); }
+        if (IS_FREE && sessionTotal >= 6 && !STORAGE.get("nlSeen", false) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+          setShowNewsletter(true); STORAGE.set("nlSeen", true);
+        }
       }, [sessionTotal]);
+
+      // Free build: count visits once per load, so returning practicers can be nudged
+      // toward membership on a throttle (see maybeNudgeAfterPractice).
+      const freeVisitsRef = useRef(0);
+      useEffect(() => {
+        if (!IS_FREE) return;
+        const v = (Number(STORAGE.get(FREE_FLAGS.visits, 0)) || 0) + 1;
+        STORAGE.set(FREE_FLAGS.visits, v);
+        freeVisitsRef.current = v;
+      }, []);
+      // Show the membership nudge after a returning free user finishes a Custom Practice
+      // session. Throttled: only on repeat visits, every other practice finish, capped at 4
+      // lifetime shows, and never stacked on another overlay.
+      const maybeNudgeAfterPractice = () => {
+        if (!IS_FREE) return;
+        if (freeVisitsRef.current < 2) return;
+        const done = (Number(STORAGE.get("freePracticeDone", 0)) || 0);
+        if (done < 1 || done % 2 !== 0) return;
+        const shown = (Number(STORAGE.get(FREE_FLAGS.nudged, 0)) || 0);
+        if (shown >= 4) return;
+        STORAGE.set(FREE_FLAGS.nudged, shown + 1);
+        setShowMemberNudge(true);
+      };
 
       // Free build: first-time visitors get a one-time guided walkthrough of a Matching round,
       // once audio is live and a round is on screen so every step has a real control to point at.
@@ -5273,12 +5500,16 @@
           {showTaskComplete && (
             <TaskCompleteModal
               data={taskCompleteData}
-              onClose={() => setShowTaskComplete(false)}
+              onClose={() => { const wasManual = taskCompleteData && taskCompleteData.isManual; setShowTaskComplete(false); if (wasManual) maybeNudgeAfterPractice(); }}
               onNextTask={() => { loadNextTask(); setShowTaskComplete(false); }}
               hasNextTask={nextTaskExists}
               onOpenManual={() => setShowManualSetup(true)}
+              freeWeekOneDone={IS_FREE && !nextTaskExists && taskCompleteData && !taskCompleteData.isManual && Number(taskCompleteData.week) === FREE_TASTE_WEEK}
+              onFreeContinue={() => { setShowTaskComplete(false); setShowWeekGate(true); }}
             />
           )}
+          {showWeekGate && <WeekOneGate onClose={() => setShowWeekGate(false)} />}
+          {showMemberNudge && <MemberNudge onClose={() => setShowMemberNudge(false)} />}
           {showKeyboardHelp && <KeyboardHelpOverlay onClose={() => setShowKeyboardHelp(false)} />}
           {showManualSetup && (
             <ManualSetup
@@ -5344,19 +5575,10 @@
 
           {/* ============ MAIN CONTENT ============ */}
           <main className="flex-1 w-full">
-            {showCurriculum && IS_FREE ? (
-              <div className="max-w-lg mx-auto w-full px-6 py-20 text-center">
-                <div className="eyebrow mb-4">Members only</div>
-                <h2 className="font-display font-bold text-3xl leading-tight mb-4">Guided training is for members only</h2>
-                <p className="text-mute leading-relaxed mb-8">Become a member and get access to step-by-step training that trains you to identify frequencies with EQ, hear compression settings, and trust your ears while mixing. New levels unlock as you progress. Custom Practice and Learn are free to use.</p>
-                <div className="flex items-center justify-center gap-3 flex-wrap">
-                  <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>Become a Member →</a>
-                  <button className="btn btn-ghost" onClick={() => setShowCurriculum(false)}>Back to Practice</button>
-                </div>
-              </div>
-            ) : showCurriculum ? (
+            {showCurriculum ? (
               <CurriculumPicker
                 inline
+                freeTaste={IS_FREE}
                 currentLevelId={currentLevelId}
                 currentWeek={curriculumWeek}
                 currentTaskIndex={curriculumTaskIndex}
@@ -5937,6 +6159,11 @@
                 )}
                 {!isLearnMode && (
                 <ProgressPanel module="eq" keys={OCTAVE_BANDS.map(String)} labelFor={(k) => bandLabel(Number(k))} minAttempts={6} weakCount={3} onWeakSpots={practiceWeakBands} weakLabel="Practice weak bands" disabled={!audioReady} />
+                )}
+
+                {/* Free tier: persistent membership card. Present, never a popup. */}
+                {IS_FREE && !isLearnMode && (
+                  <MemberCard onStartWeek1={freeTasteComplete(progress) ? null : startFreeWeek1} />
                 )}
 
                 {/* Keyboard shortcuts hint (desktop only; CSS hides on mobile) */}
