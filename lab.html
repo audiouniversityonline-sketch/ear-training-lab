@@ -797,6 +797,43 @@
     // Free build: served as lab.html?free=1 (paid build is plain lab.html, unaffected).
     // Free = limited EQ (Practice + Learn; the guided course is members-only) and no Compression.
     const IS_FREE = (typeof window !== "undefined") && (window.AU_FREE === true || (function () { try { return new URLSearchParams(window.location.search).get("free") === "1"; } catch (e) { return false; } })());
+    // Free tier gives a real taste of the guided path: Foundations (level 1), Week 1
+    // only. Everything past it is a membership prompt. Centralized so the taste can
+    // be widened later (e.g. all of Foundations) by changing these two constants.
+    // The free taste is a standalone three-part set (mids, lows, highs) that shows the
+    // SHAPE of the training without exposing any of the real course lessons or their
+    // names (which a free user could otherwise copy into Custom Practice). It is a
+    // synthetic level injected only into the free build; members never see it. Band
+    // ranges map to existing FREQ_SETS: mids_octaves 250-4k, lows_octaves 63-250,
+    // highs_octaves 4k-16k.
+    const FREE_TASTE_LEVEL = 0;
+    const FREE_TASTE_WEEK = 1;
+    const FREE_TASTE_CURRICULUM = {
+      id: FREE_TASTE_LEVEL,
+      name: "Free exercises",
+      subtitle: "Three free ear training sets across the frequency spectrum",
+      weeks: [{
+        week: FREE_TASTE_WEEK,
+        lessonTitle: "Free exercises",
+        circleLessonId: null,
+        tasks: [
+          { name: "Mids (250 Hz to 4 kHz)",  mode: "Matching", freqSet: "mids_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 5 },
+          { name: "Lows (63 Hz to 250 Hz)",  mode: "Matching", freqSet: "lows_octaves",  bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 5 },
+          { name: "Highs (4 kHz to 16 kHz)", mode: "Matching", freqSet: "highs_octaves", bandwidth: "1.0_oct", gainDb: 12, direction: "boost", rounds: 5 }
+        ]
+      }]
+    };
+    const isFreeTasteSpot = (levelId, week) => Number(levelId) === FREE_TASTE_LEVEL && Number(week) === FREE_TASTE_WEEK;
+    // What membership adds, shown wherever we prompt a free user to upgrade. One list,
+    // reused, so the pitch stays consistent.
+    const MEMBER_BENEFITS = [
+      "The full EQ curriculum: Foundations, Advanced, and Mastery",
+      "The compression training and its guided levels",
+      "Levels that build in difficulty as you improve"
+    ];
+    // Free-tier email + engagement flags (localStorage). nlSubscribed is set once the
+    // Kit form succeeds so we never ask the same visitor twice.
+    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges" };
     // Preview mode: ?preview=1 turns off the level entry gate and week drip so
     // curriculum can be tested end to end. STAGING ONLY by construction: the flag
     // requires "staging" in the path, so lab.html?preview=1 does nothing for
@@ -805,7 +842,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.15";
+    const APP_VERSION = "v2.17";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -1285,51 +1322,88 @@
         </section>
       );
     }
-    // Free build: newsletter signup popup (shown once, after a short session).
-    // Our own styled field; submits straight to Kit's form endpoint (no embedded Kit form).
-    function NewsletterModal({ onClose }) {
+    // Shared benefits list. One source of truth for the upgrade pitch, reused by the
+    // Week 1 gate, the returning-visitor nudge, and the persistent Practice card.
+    function MemberBenefits({ compact }) {
+      return (
+        <ul className="flex flex-col gap-2" style={{ listStyle: "none", padding: 0, margin: 0 }}>
+          {MEMBER_BENEFITS.map((b, i) => (
+            <li key={i} className="flex items-start gap-2" style={{ fontSize: compact ? 12 : 13, lineHeight: 1.5, color: "var(--ink-2)" }}>
+              <svg width="14" height="14" viewBox="0 0 14 14" fill="none" stroke="var(--accent)" strokeWidth="1.6" aria-hidden="true" style={{ flexShrink: 0, marginTop: 2 }}>
+                <path d="M2.5 7.5l3 3 6-7" />
+              </svg>
+              <span>{b}</span>
+            </li>
+          ))}
+        </ul>
+      );
+    }
+
+    // Hard email gate, shown after the first free set. Email is required to continue:
+    // no skip, no dismiss. On submit it records the email and calls onDone, which moves
+    // the user on to the next set. The membership pitch is separate (MemberNudge), shown
+    // after the last set.
+    function EmailGate({ onDone }) {
+      // NOTE: this component lives above the App-scoped STORAGE helper, so it writes
+      // localStorage directly with the same JSON semantics STORAGE uses.
       const [firstName, setFirstName] = useState("");
       const [email, setEmail] = useState("");
-      const [err, setErr] = useState("");   // "" | "name" | "email"
-      const [done, setDone] = useState(false);
+      const [err, setErr] = useState("");
+      const field = (bad) => ({ width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 14, background: "var(--panel-2)", color: "var(--ink)", borderRadius: 8, border: "1px solid " + (bad ? "var(--hot)" : "var(--line-2)"), outline: "none" });
       const submit = () => {
         if (!firstName.trim()) { setErr("name"); return; }
         if (!isValidEmail(email)) { setErr("email"); return; }
         submitToKit(email, firstName);
-        setDone(true);
+        try { localStorage.setItem(FREE_FLAGS.subscribed, "true"); } catch (e) {}
+        onDone();
       };
-      const field = (bad) => ({ width: "100%", boxSizing: "border-box", padding: "11px 13px", fontSize: 14, background: "var(--panel-2)", color: "var(--ink)", borderRadius: 8, border: "1px solid " + (bad ? "var(--hot)" : "var(--line-2)"), outline: "none" });
       return (
-        <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Get the Ear Training Guide" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+        <div className="overlay" style={{ zIndex: 200 }} role="dialog" aria-modal="true" aria-label="Add your email to continue" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
+          <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 440, position: "relative" }}>
+            <h2 className="font-display font-bold text-2xl leading-tight mb-2">Add your email to continue</h2>
+            <p className="text-sm text-mute leading-relaxed mb-4">We'll send you the Ear Training Guide, and you can keep practicing for free.</p>
+            <div className="flex flex-col gap-2">
+              <input type="text" autoComplete="given-name" placeholder="First name" value={firstName}
+                onChange={(e) => { setFirstName(e.target.value); if (err === "name") setErr(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "name")} />
+              <input type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email}
+                onChange={(e) => { setEmail(e.target.value); if (err === "email") setErr(""); }}
+                onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "email")} />
+            </div>
+            {err === "name" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>Please add your first name.</div>}
+            {err === "email" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
+            <button onClick={submit} className="btn btn-solid w-full mt-4">Continue</button>
+          </div>
+        </div>
+      );
+    }
+
+    // Returning-visitor reminder. Dismissible, throttled by the caller.
+    function MemberNudge({ onClose }) {
+      return (
+        <div className="overlay" style={{ zIndex: 190 }} role="dialog" aria-modal="true" aria-label="Become a member" ref={(el) => { if (el && !el.__etlSeen) { el.__etlSeen = true; if (window.etlEnsureVisible) window.etlEnsureVisible(el.firstElementChild || el); } }}>
           <div className="bg-panel text-ink w-full p-6 sm:p-7" style={{ border: "1px solid var(--rule)", maxWidth: 420, position: "relative" }}>
             <button onClick={onClose} aria-label="Close" className="btn btn-ghost" style={{ position: "absolute", top: 8, right: 8, padding: "2px 10px", lineHeight: 1 }}>✗</button>
-            {done ? (
-              <>
-                <div className="eyebrow mb-2" style={{ color: "var(--green)" }}>✓ On its way</div>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Check your inbox</h2>
-                <p className="text-sm text-mute leading-relaxed mb-5">We're sending the Ear Training Guide to your email. Confirm your address if asked, then keep training.</p>
-                <button onClick={onClose} className="btn btn-solid w-full">Keep training</button>
-              </>
-            ) : (
-              <>
-                <div className="eyebrow mb-2">Free guide</div>
-                <h2 className="font-display font-bold text-2xl leading-tight mb-2">Get the Ear Training Guide</h2>
-                <p className="text-sm text-mute leading-relaxed mb-4">A quick reference for the cues that mark low, mid, and high frequencies. Tell us where to send it.</p>
-                <div className="flex flex-col gap-2">
-                  <input type="text" autoComplete="given-name" placeholder="First name" value={firstName}
-                    onChange={(e) => { setFirstName(e.target.value); if (err === "name") setErr(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "name")} />
-                  <input type="email" inputMode="email" autoComplete="email" placeholder="you@email.com" value={email}
-                    onChange={(e) => { setEmail(e.target.value); if (err === "email") setErr(""); }}
-                    onKeyDown={(e) => { if (e.key === "Enter") submit(); }} style={field(err === "email")} />
-                </div>
-                {err === "name" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>Please add your first name.</div>}
-                {err === "email" && <div className="mt-2" style={{ fontSize: 11, color: "var(--hot)" }}>That doesn't look like an email address.</div>}
-                <button onClick={submit} className="btn btn-solid w-full mt-4">Send me the guide</button>
-                <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Maybe later</button>
-              </>
-            )}
+            <h2 className="font-display font-bold text-2xl leading-tight mb-4">Become a member for access to the full program</h2>
+            <div className="mb-5"><MemberBenefits /></div>
+            <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
+            <button onClick={onClose} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Not now</button>
           </div>
+        </div>
+      );
+    }
+
+    // Persistent, low-key membership card for the free Practice view. Always present,
+    // never a popup, so it reminds without interrupting.
+    function MemberCard({ onStartWeek1 }) {
+      return (
+        <div className="card p-5" style={{ borderColor: "var(--accent)" }}>
+          <div className="font-display font-semibold text-base leading-snug mb-3">Become a member for access to the full program</div>
+          <div className="mb-4"><MemberBenefits compact /></div>
+          <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid w-full" style={{ textDecoration: "none" }}>Become a Member →</a>
+          {onStartWeek1 && (
+            <button onClick={onStartWeek1} className="btn btn-ghost w-full mt-2" style={{ fontSize: 12 }}>Start the free exercises →</button>
+          )}
         </div>
       );
     }
@@ -2445,7 +2519,10 @@
       mids_thirds: ISO_THIRD_OCTAVE_BANDS.filter(f => f >= 250 && f <= 4000),
       full_thirds: [...ISO_THIRD_OCTAVE_BANDS],
       thirds_125_500: ISO_THIRD_OCTAVE_BANDS.filter(f => f >= 125 && f <= 500),
-      octaves_125_8k: [125, 250, 500, 1000, 2000, 4000, 8000]
+      octaves_125_8k: [125, 250, 500, 1000, 2000, 4000, 8000],
+      // Level 3 (TET-3) works third-octave over the same 125 Hz - 8 kHz span the
+      // syllabus writes as "FR-" and "XMF". 19 centers instead of 7.
+      thirds_125_8k: ISO_THIRD_OCTAVE_BANDS.filter(f => f >= 125 && f <= 8000)
     };
 
     /*
@@ -2584,14 +2661,36 @@
       };
     }
 
-    let CURRICULUM = normalizeCurriculum(INLINE_CURRICULUM_DEFAULT);
+    // Free build only: prepend the synthetic taste level so all the existing task-load,
+    // auto-advance, progress, and gate machinery drives it, while members never get it.
+    function withFreeTaste(cur) {
+      if (IS_FREE && cur && Array.isArray(cur.levels) && !cur.levels.some(l => l.id === FREE_TASTE_LEVEL)) {
+        cur.levels = [FREE_TASTE_CURRICULUM, ...cur.levels];
+      }
+      return cur;
+    }
+
+    let CURRICULUM = withFreeTaste(normalizeCurriculum(INLINE_CURRICULUM_DEFAULT));
+
+    /*
+     * STAGING SPLIT: Level 3 is a draft, so it lives in `curriculum-v3.json` (3 levels)
+     * and only staging reads it. Production reads `curriculum.json` (2 levels), so
+     * members never see Level 3 until it is approved. The check is on the pathname
+     * (same idiom as PREVIEW_UNLOCK above), which means promoting staging.html to
+     * lab.html does NOT leak Level 3 - the promoted copy still reads curriculum.json.
+     * To ship Level 3 for real: copy curriculum-v3.json over curriculum.json, delete
+     * it, and drop this branch. Same pattern used to ship Level 2.
+     */
+    const CURRICULUM_FILE = ((typeof window !== "undefined") && /staging/i.test(window.location.pathname))
+      ? 'curriculum-v3.json'
+      : 'curriculum.json';
 
     async function loadCurriculum() {
       try {
-        const res = await fetch('curriculum.json', { cache: 'no-store' });
+        const res = await fetch(CURRICULUM_FILE, { cache: 'no-store' });
         if (!res.ok) throw new Error('Curriculum fetch failed: ' + res.status);
         const data = await res.json();
-        CURRICULUM = normalizeCurriculum(data);
+        CURRICULUM = withFreeTaste(normalizeCurriculum(data));
       } catch (err) {
         // Inline default already loaded — log and continue.
         console.warn('[Ear Training Lab] Using inline curriculum default:', err.message);
@@ -2712,8 +2811,20 @@
       { id: 'acoustic', name: 'Acoustic Guitar',   category: 'Guitar', path: 'audio/acoustic-guitar.mp3', range: [125, 8000] },
       { id: 'vocal',    name: 'Lead Vocal',        category: 'Vocals', path: 'audio/vocal.mp3',           range: [125, 8000] },
       { id: 'bgvocal',  name: 'Background Vocals', category: 'Vocals', path: 'audio/bg-vocals.mp3',       range: [125, 8000] },
-      { id: 'piano',    name: 'Piano',             category: 'Solo Instruments', path: 'audio/piano-chopin.mp3', range: [125, 4000] }
+      { id: 'piano',    name: 'Piano',             category: 'Solo Instruments', path: 'audio/piano-chopin.mp3', range: [125, 4000] },
+      /*
+       * Level 3 (TET-3) special program material. These three speech sources are
+       * specified by the syllabus but not recorded yet, so they carry no `path` and
+       * are marked pending: the picker hides them, and a Level 3 task that asks for
+       * one runs on pink noise with a notice instead of erroring. To activate one,
+       * drop the file in audio/ and add its `path` here - nothing else changes.
+       */
+      { id: 'speech-de', name: 'German Speech',  category: 'Speech', range: [125, 8000], pending: true },
+      { id: 'speech-en', name: 'English Speech', category: 'Speech', range: [125, 8000], pending: true },
+      { id: 'speech-f',  name: 'Female Speech',  category: 'Speech', range: [125, 8000], pending: true }
     ];
+    const SOURCE_BY_ID = SOURCE_LIBRARY.reduce((m, s) => { m[s.id] = s; return m; }, {});
+    const sourceIsReady = (s) => !!(s && s.path && !s.pending);
 
     // Localized copy for mode descriptions — explains the WHY
     const MODE_DESCRIPTIONS = {
@@ -3413,11 +3524,15 @@
     function CurriculumPicker({
       currentLevelId, currentWeek, currentTaskIndex,
       onSelectLevel, onSelectWeek, onSelectTask,
-      progress, onClose, onMarkComplete, onUnmarkComplete, onOpenManual, inline
+      progress, onClose, onMarkComplete, onUnmarkComplete, onOpenManual, inline, freeTaste
     }) {
-      const activeLevels = CURRICULUM.levels || [];
+      // Free taste: show only Foundations, only Week 1 playable, the rest as a
+      // membership prompt. Members (freeTaste=false) see the full picker unchanged.
+      const activeLevels = freeTaste
+        ? (CURRICULUM.levels || []).filter(l => l.id === FREE_TASTE_LEVEL)
+        : (CURRICULUM.levels || []);
       const lockedLevels = CURRICULUM.lockedLevels || [];
-      const [viewLevelId, setViewLevelId] = useState(currentLevelId);
+      const [viewLevelId, setViewLevelId] = useState(freeTaste ? FREE_TASTE_LEVEL : currentLevelId);
       const [viewLevelLocked, setViewLevelLocked] = useState(false);
       const [selectedWeek, setSelectedWeek] = useState(currentWeek);
 
@@ -3439,7 +3554,15 @@
         if (!entryGate.locked && settleWeekUnlocks(activeLevel, levelProgress)) setUnlockTick(t => t + 1);
       }, [viewLevelId, progress, entryGate.locked]);
       const unlockMap = weekUnlockStatus(activeLevel, levelProgress);
-      const weekLocked = (weekNum) => { const u = unlockMap[weekNum]; return !!(u && !u.unlocked); };
+      const weekLocked = (weekNum) => {
+        if (freeTaste && weekNum !== FREE_TASTE_WEEK) return true;   // free taste: only Week 1 is open
+        const u = unlockMap[weekNum]; return !!(u && !u.unlocked);
+      };
+      // Reason text for a locked week card (guarded: Foundations weeks have no drip entry).
+      const weekLockReason = (weekNum) => {
+        if (freeTaste && weekNum !== FREE_TASTE_WEEK) return "Members";
+        const u = unlockMap[weekNum]; return (u && u.reason) || "Locked";
+      };
 
       const weekIsComplete = (weekNum) => {
         const weekProgress = levelProgress[weekNum];
@@ -3459,7 +3582,9 @@
 
       const headerTitle = viewLevelLocked && lockedLevel
         ? lockedLevel.name
-        : (activeLevel?.name ? `${activeLevel.name} · ${weeks.length} Levels` : "Levels");
+        : freeTaste
+          ? "Free exercises"
+          : (activeLevel?.name ? `${activeLevel.name} · ${weeks.length} Levels` : "Levels");
 
       return (
         <div className={inline ? "max-w-3xl mx-auto w-full px-4 sm:px-6 py-8" : "overlay"} onClick={inline ? undefined : onClose}>
@@ -3538,6 +3663,11 @@
               {/* ========== ACTIVE LEVEL: WEEK GRID + TASK LIST ========== */}
               {!viewLevelLocked && activeLevel && !entryGate.locked && (
               <div>
+              {/* Free taste is a single set of three; hide the multi-week grid (and the
+                  course names it would show). Members get the full week grid. */}
+              {freeTaste ? (
+                <p className="text-sm text-mute leading-relaxed mb-6 max-w-xl">Three short sets across the low, mid, and high frequencies. Tap one to start.</p>
+              ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-2 mb-8">
                 {weeks.map(w => {
                   const locked = weekLocked(w.week);
@@ -3548,24 +3678,27 @@
                     onClick={() => { if (!locked) setSelectedWeek(w.week); }}
                     disabled={locked}
                     style={locked ? { opacity: 0.45, cursor: 'not-allowed' } : {}}
-                    title={locked ? unlockMap[w.week].reason : undefined}
+                    title={locked ? weekLockReason(w.week) : undefined}
                   >
                     <div className="num">Level {w.week}{locked ? ' · Locked' : ''}</div>
                     <div className="title">{w.lessonTitle}</div>
-                    <div className="meta">{locked ? unlockMap[w.week].reason : (w.tasks.length + " tasks")}</div>
+                    <div className="meta">{locked ? weekLockReason(w.week) : (w.tasks.length + " tasks")}</div>
                   </button>
                   );
                 })}
               </div>
+              )}
 
               {weekPlan && (
-                <div className="border-t rule pt-6">
+                <div className={freeTaste ? "" : "border-t rule pt-6"}>
+                  {!freeTaste && (
                   <div className="flex items-baseline justify-between mb-3">
                     <div className="eyebrow">Level {weekPlan.week} Tasks</div>
                     <div className="text-xs text-mute leading-relaxed hidden sm:block max-w-sm text-right">
                       Tap a task to start it. Use "Mark complete" for tasks you already finished before this update.
                     </div>
                   </div>
+                  )}
                   <div className="flex flex-col gap-2">
                     {weekPlan.tasks.map((t, i) => {
                       const entry = readProgress(levelProgress[weekPlan.week]?.[i]);
@@ -3618,7 +3751,9 @@
                             </div>
                           </button>
 
-                          {/* Mark / unmark action — separate button to avoid nested click handlers */}
+                          {/* Mark / unmark action — separate button to avoid nested click handlers.
+                              Not shown for the free taste (nothing to backfill). */}
+                          {!freeTaste && (
                           <div className="flex-shrink-0 border-l rule flex items-stretch">
                             {isDone ? (
                               <button
@@ -3644,10 +3779,20 @@
                               </button>
                             )}
                           </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
+                </div>
+              )}
+
+              {/* Free taste: after Week 1, the rest of the path is a membership prompt. */}
+              {freeTaste && (
+                <div className="mt-8 pt-6 border-t rule">
+                  <div className="font-display font-semibold text-lg mb-4">Become a member for access to the full program</div>
+                  <div className="mb-5 max-w-xl"><MemberBenefits /></div>
+                  <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>Become a Member →</a>
                 </div>
               )}
 
@@ -3807,6 +3952,24 @@
       // Set when a member picks "Start a fresh practice" on the welcome screen;
       // consumed once by the task-load effect after audio comes up.
       const bootFreshRef = useRef(false);
+      // First-boot guard for the free tier's landing decision (guided Week 1 vs Practice).
+      const didFreeBootRef = useRef(false);
+      // Free tier: has the visitor finished every set in the free exercises?
+      const freeTasteComplete = (prog) => {
+        const lv = (CURRICULUM.levels || []).find(l => l.id === FREE_TASTE_LEVEL);
+        const wp = lv && (lv.weeks || []).find(w => w.week === FREE_TASTE_WEEK);
+        if (!wp) return false;
+        const wprog = getLevelProgress(prog, FREE_TASTE_LEVEL)[FREE_TASTE_WEEK] || {};
+        return wp.tasks.every((_, i) => { const e = readProgress(wprog[i]); return !!(e && e.completed); });
+      };
+      // Free tier: has the visitor finished the FIRST set (the gate fires right after it)?
+      const freeSet1Done = (prog) => {
+        const wprog = getLevelProgress(prog, FREE_TASTE_LEVEL)[FREE_TASTE_WEEK] || {};
+        const e = readProgress(wprog[0]);
+        return !!(e && e.completed);
+      };
+      // Index of the last free set, so we know when to show the membership pitch.
+      const FREE_LAST_SET = ((FREE_TASTE_CURRICULUM.weeks[0] || {}).tasks || []).length - 1;
       const [audioLoading, setAudioLoading] = useState(false);
       const [audioError, setAudioError] = useState(null);
       const [isPlaying, setIsPlaying] = useState(false);
@@ -3962,6 +4125,9 @@
         if (curriculumTaskIndex + 1 < wp.tasks.length) {
           return { week: curriculumWeek, taskIndex: curriculumTaskIndex + 1, task: wp.tasks[curriculumTaskIndex + 1] };
         }
+        // Free tier: the guided path stops at the end of the Week 1 taste. Finishing
+        // Week 1's last task has no "next task" — it triggers the membership gate.
+        if (IS_FREE) return null;
         const nextWeekPlan = getWeekPlan(curriculumWeek + 1);
         if (nextWeekPlan && nextWeekPlan.tasks.length > 0) {
           // Drip levels: never auto-advance into a week that hasn't unlocked yet.
@@ -4090,6 +4256,9 @@
        * user-uploaded WAVs — the difference is only where the bytes come from.
        */
       const [activeSourceId, setActiveSourceId] = useState(null);
+      // Set when a task asks for program material that has not been recorded yet.
+      // The task still runs (on pink noise); this just explains why.
+      const [taskSourceNote, setTaskSourceNote] = useState(null);
       const loadSourceFromLibrary = async (source) => {
         setIsLoadingFile(true);
         try {
@@ -4621,6 +4790,28 @@
         setGainOptions(Array.isArray(task.gainOptions) && task.gainOptions.length > 0
           ? task.gainOptions
           : null);
+        /*
+         * Program material (Level 3 "SP" tasks). A curriculum task may name a source
+         * from SOURCE_LIBRARY; everything else trains on pink noise. Three cases:
+         *   - named + recorded  -> load it
+         *   - named + pending   -> pink noise, with a note saying why
+         *   - not named         -> pink noise, so a source never leaks into the next task
+         * Manual sessions are left alone: there the user picks the source themselves.
+         */
+        const isManualTask = Array.isArray(task.freqPool) && task.freqPool.length > 0;
+        const wantSource = task.source ? SOURCE_BY_ID[task.source] : null;
+        if (task.source && sourceIsReady(wantSource)) {
+          setTaskSourceNote(null);
+          if (activeSourceId !== wantSource.id) loadSourceFromLibrary(wantSource);
+        } else {
+          if (task.source) {
+            setTaskSourceNote((wantSource ? wantSource.name : "That program material")
+              + " is not recorded yet, so this task runs on pink noise for now.");
+          } else {
+            setTaskSourceNote(null);
+          }
+          if (!isManualTask && activeSourceId) { setAudioSource('noise'); setActiveSourceId(null); }
+        }
         setRound(null);
         setShowAnswer(false);
         setGuessFreq(null);
@@ -4776,7 +4967,23 @@
               taskIndex: isManualSession ? null : curriculumTaskIndex,
               isManual: isManualSession
             });
-            setShowTaskComplete(true);
+            // Free tier: tally finished Custom Practice sessions so the membership nudge
+            // can fire on a throttle for returning practicers.
+            if (IS_FREE && isManualSession) {
+              try { STORAGE.set("freePracticeDone", (Number(STORAGE.get("freePracticeDone", 0)) || 0) + 1); } catch (e) {}
+            }
+            // Free exercises flow: the email gate fires right after the FIRST set (and blocks
+            // continuing until they subscribe); the membership pitch fires after the LAST set.
+            // Everything else shows the normal completion card.
+            const onFreeExercises = IS_FREE && !isManualSession && task && isFreeTasteSpot(currentLevelId, curriculumWeek);
+            const subscribed = STORAGE.get(FREE_FLAGS.subscribed, false);
+            if (onFreeExercises && curriculumTaskIndex === 0 && !subscribed) {
+              setShowEmailGate(true);
+            } else if (onFreeExercises && curriculumTaskIndex >= FREE_LAST_SET) {
+              setShowMemberNudge(true);
+            } else {
+              setShowTaskComplete(true);
+            }
           }
           setRoundCorrect(0);
         }
@@ -4814,6 +5021,21 @@
           // applyTaskSpec sets isManualSession based on the task shape — no need to set it here.
           setTimeout(() => applyTaskSpec(nextTask.task), 100);
         }
+      };
+
+      // Free tier: jump straight into the guided Foundations Week 1 taste (used by the
+      // Practice-view membership card). Loads the task directly so it works even when
+      // the picker isn't open and even from inside a Custom Practice session.
+      const startFreeWeek1 = () => {
+        setShowCurriculum(false);
+        const lv = (CURRICULUM.levels || []).find(l => l.id === FREE_TASTE_LEVEL);
+        const wp = lv && (lv.weeks || []).find(w => w.week === FREE_TASTE_WEEK);
+        setCurrentLevelId(FREE_TASTE_LEVEL);
+        setCurriculumWeek(FREE_TASTE_WEEK);
+        setCurriculumTaskIndex(0);
+        STORAGE.set("curriculumWeek", FREE_TASTE_WEEK);
+        STORAGE.set("curriculumTaskIndex", 0);
+        if (wp && wp.tasks[0]) { modeChangeSourceRef.current = 'internal'; setTimeout(() => applyTaskSpec(wp.tasks[0]), 60); }
       };
 
       /*
@@ -5016,9 +5238,21 @@
         STORAGE.set("curriculumWeek", curriculumWeek);
         STORAGE.set("curriculumTaskIndex", curriculumTaskIndex);
         if (!audioReady) return;
-        // Free build: the guided course is members-only, so start free users in Custom
-        // Practice (free-form, doesn't touch course progression) instead of a course task.
-        if (IS_FREE && !isManualSession && !isLearnMode) { startManualSession(manualConfig); return; }
+        // Free build: the only guided task free users can run is the Week 1 taste
+        // (Foundations, Week 1). On first landing, drop a newcomer straight into that
+        // guided week (the hero of the funnel); a visitor who already finished it, or
+        // who is anywhere else, gets Custom Practice. After boot, honor explicit
+        // navigation so clicking the Week 1 tasks (even to replay) loads them.
+        if (IS_FREE && !isManualSession && !isLearnMode) {
+          const onTaste = isFreeTasteSpot(currentLevelId, curriculumWeek);
+          if (!didFreeBootRef.current) {
+            didFreeBootRef.current = true;
+            if (!(onTaste && !freeTasteComplete(progress))) { startManualSession(manualConfig); return; }
+          } else if (!onTaste) {
+            startManualSession(manualConfig); return;
+          }
+          // else: on the Week 1 taste spot — fall through and load the guided task.
+        }
         // Member chose "Start a fresh practice" on the welcome screen: open Custom
         // Practice with their saved setup instead of resuming the course task.
         if (bootFreshRef.current) { bootFreshRef.current = false; startManualSession(manualConfig); return; }
@@ -5060,11 +5294,42 @@
 
       // Keyboard shortcuts state
       const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
-      const [showNewsletter, setShowNewsletter] = useState(false);
-      // Free build: after a short taste (~6 answers), show the newsletter popup once per visitor.
+      // Free tier upgrade prompts: the email gate (after set 1) and the membership pitch.
+      const [showEmailGate, setShowEmailGate] = useState(false);
+      const [showMemberNudge, setShowMemberNudge] = useState(false);
+      // Free build: hard email gate. A visitor who finished the first set but has not
+      // given their email is re-gated on load, so they cannot reload past it. Fires once
+      // audio is ready so it lands over the app, not the loading screen. Subscribers are
+      // never re-gated.
       useEffect(() => {
-        if (IS_FREE && sessionTotal >= 6 && !STORAGE.get("nlSeen", false)) { setShowNewsletter(true); STORAGE.set("nlSeen", true); }
-      }, [sessionTotal]);
+        if (!IS_FREE || !audioReady) return;
+        if (freeSet1Done(progress) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+          setShowEmailGate(true);
+        }
+      }, [audioReady]);
+
+      // Free build: count visits once per load, so returning practicers can be nudged
+      // toward membership on a throttle (see maybeNudgeAfterPractice).
+      const freeVisitsRef = useRef(0);
+      useEffect(() => {
+        if (!IS_FREE) return;
+        const v = (Number(STORAGE.get(FREE_FLAGS.visits, 0)) || 0) + 1;
+        STORAGE.set(FREE_FLAGS.visits, v);
+        freeVisitsRef.current = v;
+      }, []);
+      // Show the membership nudge after a returning free user finishes a Custom Practice
+      // session. Throttled: only on repeat visits, every other practice finish, capped at 4
+      // lifetime shows, and never stacked on another overlay.
+      const maybeNudgeAfterPractice = () => {
+        if (!IS_FREE) return;
+        if (freeVisitsRef.current < 2) return;
+        const done = (Number(STORAGE.get("freePracticeDone", 0)) || 0);
+        if (done < 1 || done % 2 !== 0) return;
+        const shown = (Number(STORAGE.get(FREE_FLAGS.nudged, 0)) || 0);
+        if (shown >= 4) return;
+        STORAGE.set(FREE_FLAGS.nudged, shown + 1);
+        setShowMemberNudge(true);
+      };
 
       // Free build: first-time visitors get a one-time guided walkthrough of a Matching round,
       // once audio is live and a round is on screen so every step has a real control to point at.
@@ -5210,7 +5475,6 @@
           <h1 className="sr-only">Ear Training Lab, Equalization</h1>
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
           {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} onUnlockFresh={() => { bootFreshRef.current = true; initializeAudio(); }} isLoading={audioLoading} error={audioError} />}
-          {showNewsletter && <NewsletterModal onClose={() => setShowNewsletter(false)} />}
           {showTour && (
             <Walkthrough
               onClose={() => setShowTour(false)}
@@ -5220,12 +5484,16 @@
           {showTaskComplete && (
             <TaskCompleteModal
               data={taskCompleteData}
-              onClose={() => setShowTaskComplete(false)}
+              onClose={() => { const wasManual = taskCompleteData && taskCompleteData.isManual; setShowTaskComplete(false); if (wasManual) maybeNudgeAfterPractice(); }}
               onNextTask={() => { loadNextTask(); setShowTaskComplete(false); }}
               hasNextTask={nextTaskExists}
               onOpenManual={() => setShowManualSetup(true)}
             />
           )}
+          {/* Email gate fires after the first free set; on submit it moves the user to the
+              next set. No skip, no close. */}
+          {showEmailGate && <EmailGate onDone={() => { setShowEmailGate(false); loadNextTask(); }} />}
+          {showMemberNudge && <MemberNudge onClose={() => setShowMemberNudge(false)} />}
           {showKeyboardHelp && <KeyboardHelpOverlay onClose={() => setShowKeyboardHelp(false)} />}
           {showManualSetup && (
             <ManualSetup
@@ -5291,19 +5559,10 @@
 
           {/* ============ MAIN CONTENT ============ */}
           <main className="flex-1 w-full">
-            {showCurriculum && IS_FREE ? (
-              <div className="max-w-lg mx-auto w-full px-6 py-20 text-center">
-                <div className="eyebrow mb-4">Members only</div>
-                <h2 className="font-display font-bold text-3xl leading-tight mb-4">Guided training is for members only</h2>
-                <p className="text-mute leading-relaxed mb-8">Become a member and get access to step-by-step training that trains you to identify frequencies with EQ, hear compression settings, and trust your ears while mixing. New levels unlock as you progress. Custom Practice and Learn are free to use.</p>
-                <div className="flex items-center justify-center gap-3 flex-wrap">
-                  <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>Become a Member →</a>
-                  <button className="btn btn-ghost" onClick={() => setShowCurriculum(false)}>Back to Practice</button>
-                </div>
-              </div>
-            ) : showCurriculum ? (
+            {showCurriculum ? (
               <CurriculumPicker
                 inline
+                freeTaste={IS_FREE}
                 currentLevelId={currentLevelId}
                 currentWeek={curriculumWeek}
                 currentTaskIndex={curriculumTaskIndex}
@@ -5423,14 +5682,26 @@
                   <section className="mb-4">
                     <div className="font-mono text-[10px] uppercase tracking-wider text-mute">
                       {!isManualSession && currentTask
-                        ? ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : "")
+                        ? (isFreeTasteSpot(currentLevelId, curriculumWeek)
+                            ? "Free exercises · Set " + (curriculumTaskIndex + 1) + " of 3" + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : "")
+                            : ((CURRICULUM.levels.find(l => l.id === currentLevelId) || {}).name || "Level " + currentLevelId) + " · Week " + curriculumWeek + " · Task " + (curriculumTaskIndex + 1) + (currentTask.name ? " · " + cleanTaskName(currentTask.name) : ""))
                         : "Custom Practice"}
                     </div>
                     <div className="font-mono text-[10px] uppercase tracking-wider mt-1" style={{ color: "var(--accent-ink)" }}>
                       {"Listen for: " + (eqMode === "both" ? "peaks and dips" : eqMode === "cut" ? "dips (cuts)" : "peaks (boosts)")
                         + " · " + ((gainOptions && gainOptions.length > 1) ? gainOptions.map(g => g + " dB").join(" or ") : gainDb + " dB")
-                        + (filterCount > 1 ? " · " + filterCount + " bands at once" : "")}
+                        + (filterCount > 1 ? " · " + filterCount + " bands at once" : "")
+                        + (currentTask && currentTask.bandwidth === "1_3_oct" ? " · third octave" : "")}
                     </div>
+                    {/* Program material: name what you are listening to, or explain the
+                        fallback when a Level 3 source has not been recorded yet. */}
+                    {(taskSourceNote || activeSourceId) && (
+                      <div className="font-mono text-[10px] uppercase tracking-wider mt-1 text-mute">
+                        {taskSourceNote
+                          ? taskSourceNote
+                          : "Source: " + ((SOURCE_BY_ID[activeSourceId] || {}).name || "custom")}
+                      </div>
+                    )}
                   </section>
                 )}
 
@@ -5876,6 +6147,11 @@
                 <ProgressPanel module="eq" keys={OCTAVE_BANDS.map(String)} labelFor={(k) => bandLabel(Number(k))} minAttempts={6} weakCount={3} onWeakSpots={practiceWeakBands} weakLabel="Practice weak bands" disabled={!audioReady} />
                 )}
 
+                {/* Free tier: persistent membership card. Present, never a popup. */}
+                {IS_FREE && !isLearnMode && (
+                  <MemberCard onStartWeek1={freeTasteComplete(progress) ? null : startFreeWeek1} />
+                )}
+
                 {/* Keyboard shortcuts hint (desktop only; CSS hides on mobile) */}
                 <section className="pt-2 kbd-hints">
                   <div className="flex flex-col gap-2 text-xs font-mono text-mute">
@@ -6011,8 +6287,10 @@
     }) {
       const fileInputRef = useRef(null);
 
-      // Group library sources by category for clean rendering.
-      const libraryByCategory = SOURCE_LIBRARY.reduce((acc, s) => {
+      // Group library sources by category for clean rendering. Pending sources
+      // (declared for Level 3 but not recorded yet) have no file, so they stay out
+      // of the picker until their audio lands.
+      const libraryByCategory = SOURCE_LIBRARY.filter(sourceIsReady).reduce((acc, s) => {
         if (!acc[s.category]) acc[s.category] = [];
         acc[s.category].push(s);
         return acc;
@@ -6272,7 +6550,7 @@
           <main className="max-w-lg mx-auto px-6 py-20 text-center">
             <div className="eyebrow mb-4">Members only</div>
             <h2 className="font-display font-bold text-3xl leading-tight mb-4">Compression training is for members only</h2>
-            <p className="text-mute leading-relaxed mb-8">The compression ear trainer is for Audio University members. The EQ trainer here is free to use.</p>
+            <p className="text-mute leading-relaxed mb-8">Become a member for access to the full program. The EQ training here is free to use.</p>
             <div className="flex items-center justify-center gap-3 flex-wrap">
               <a href={MEMBERSHIP_URL} target="_blank" rel="noopener" className="btn btn-solid" style={{ textDecoration: "none" }}>Become a Member →</a>
               <button className="btn btn-ghost" onClick={() => onSwitchModule("eq")}>Back to EQ</button>
