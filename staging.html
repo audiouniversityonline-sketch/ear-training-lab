@@ -788,9 +788,16 @@
 <body>
   <div id="app"></div>
 
+  <!-- React, ReactDOM and Babel come from a CDN. If unpkg is unreachable (network filter,
+       privacy extension, DNS, regional block) each one falls back to jsdelivr. Without this
+       a blocked CDN leaves the body empty, which renders as a silent black screen.
+       document.write is deliberate: it keeps these synchronous and in order. -->
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script>window.React||document.write('<script src="https://cdn.jsdelivr.net/npm/react@18/umd/react.production.min.js"><\/script>');</script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script>window.ReactDOM||document.write('<script src="https://cdn.jsdelivr.net/npm/react-dom@18/umd/react-dom.production.min.js"><\/script>');</script>
   <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+  <script>window.Babel||document.write('<script src="https://cdn.jsdelivr.net/npm/@babel/standalone@7/babel.min.js"><\/script>');</script>
 
   <script type="text/babel" data-presets="env,react">
     const { useEffect, useState, useRef, useCallback, useMemo } = React;
@@ -847,7 +854,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.18";
+    const APP_VERSION = "v2.19";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -6610,6 +6617,39 @@
 
     const root = ReactDOM.createRoot(document.getElementById("app"));
     root.render(<Shell />);
+  </script>
+
+  <!-- Last-resort visible failure. If the app has not mounted after 10s (blocked CDN,
+       script error, browser too old), replace the empty page with something readable and
+       actionable. Without this the user just sees a black rectangle with no explanation.
+       Self-healing: if the app mounts late, React renders over this message. -->
+  <script>
+    (function () {
+      function showLoadFailure() {
+        var el = document.getElementById("app");
+        if (!el || el.children.length > 0) return;   // app mounted fine
+        var missing = [];
+        if (!window.React) missing.push("React");
+        if (!window.ReactDOM) missing.push("ReactDOM");
+        if (!window.Babel) missing.push("Babel");
+        var detail = missing.length ? missing.join(", ") : "app script";
+        el.innerHTML =
+          '<div style="max-width:540px;margin:0 auto;padding:48px 24px;font-family:system-ui,-apple-system,sans-serif;color:#e9e6df;line-height:1.6">' +
+            '<div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#d4a13a;margin-bottom:14px">Ear Training Lab</div>' +
+            '<h1 style="font-size:22px;font-weight:700;margin:0 0 12px">The Lab could not finish loading.</h1>' +
+            '<p style="margin:0 0 18px;color:#a9a49a">Part of the app was blocked before it could start. This is almost always a browser extension or a network filter, not a problem with your account.</p>' +
+            '<p style="margin:0 0 8px;font-weight:600">Try these in order:</p>' +
+            '<ol style="margin:0 0 18px;padding-left:22px;color:#a9a49a;list-style:decimal outside">' +
+              '<li style="margin-bottom:6px">Turn off ad blockers and privacy extensions for this page, then reload.</li>' +
+              '<li style="margin-bottom:6px">Open the Lab in a different browser.</li>' +
+              '<li style="margin-bottom:6px">Switch networks, for example phone data instead of work or school wifi, and turn off any VPN.</li>' +
+            '</ol>' +
+            '<p style="margin:0 0 6px;color:#a9a49a">Still stuck? Send us this line and we can take it from there:</p>' +
+            '<code style="display:block;padding:10px 12px;background:#1c1b18;border:1px solid #2f2d28;border-radius:6px;font-size:12px;color:#d4a13a">could not load: ' + detail + '</code>' +
+          '</div>';
+      }
+      setTimeout(showLoadFailure, 10000);
+    })();
   </script>
 </body>
 </html>
