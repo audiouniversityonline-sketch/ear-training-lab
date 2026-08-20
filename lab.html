@@ -824,6 +824,11 @@
       }]
     };
     const isFreeTasteSpot = (levelId, week) => Number(levelId) === FREE_TASTE_LEVEL && Number(week) === FREE_TASTE_WEEK;
+    // Hard email gate budget: total answered questions a free user gets BEFORE the gate,
+    // counted across the free exercises AND Custom Practice, so practice mode cannot be
+    // used to train indefinitely without giving an email. Set to 5 to match the 5
+    // exercises in free set 1, so the guided flow is unchanged.
+    const FREE_ANSWER_LIMIT = 5;
     // What membership adds, shown wherever we prompt a free user to upgrade. One list,
     // reused, so the pitch stays consistent.
     const MEMBER_BENEFITS = [
@@ -833,7 +838,7 @@
     ];
     // Free-tier email + engagement flags (localStorage). nlSubscribed is set once the
     // Kit form succeeds so we never ask the same visitor twice.
-    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges" };
+    const FREE_FLAGS = { subscribed: "nlSubscribed", visits: "freeVisits", nudged: "memberNudges", answered: "freeAnswered" };
     // Preview mode: ?preview=1 turns off the level entry gate and week drip so
     // curriculum can be tested end to end. STAGING ONLY by construction: the flag
     // requires "staging" in the path, so lab.html?preview=1 does nothing for
@@ -842,7 +847,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.17";
+    const APP_VERSION = "v2.18";
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -4919,6 +4924,14 @@
         const nextQ = qInRound + 1;
         setQInRound(nextQ);
         setSessionTotal(t => t + 1);
+        // Free tier: every answered question counts toward the email gate, in the free
+        // exercises AND in Custom Practice. Persistent, so reloading cannot reset it.
+        let gateFiring = false;
+        if (IS_FREE && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+          const answeredSoFar = (Number(STORAGE.get(FREE_FLAGS.answered, 0)) || 0) + 1;
+          STORAGE.set(FREE_FLAGS.answered, answeredSoFar);
+          if (answeredSoFar >= FREE_ANSWER_LIMIT) { gateFiring = true; setShowEmailGate(true); }
+        }
         if (correct) {
           setRoundCorrect(rc => rc + 1);
           setSessionCorrect(sc => sc + 1);
@@ -4977,7 +4990,9 @@
             // Everything else shows the normal completion card.
             const onFreeExercises = IS_FREE && !isManualSession && task && isFreeTasteSpot(currentLevelId, curriculumWeek);
             const subscribed = STORAGE.get(FREE_FLAGS.subscribed, false);
-            if (onFreeExercises && curriculumTaskIndex === 0 && !subscribed) {
+            if (gateFiring) {
+              // The email gate is already opening for this answer; don't stack a second modal.
+            } else if (onFreeExercises && curriculumTaskIndex === 0 && !subscribed) {
               setShowEmailGate(true);
             } else if (onFreeExercises && curriculumTaskIndex >= FREE_LAST_SET) {
               setShowMemberNudge(true);
@@ -5303,7 +5318,8 @@
       // never re-gated.
       useEffect(() => {
         if (!IS_FREE || !audioReady) return;
-        if (freeSet1Done(progress) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
+        const answeredTotal = Number(STORAGE.get(FREE_FLAGS.answered, 0)) || 0;
+        if ((answeredTotal >= FREE_ANSWER_LIMIT || freeSet1Done(progress)) && !STORAGE.get(FREE_FLAGS.subscribed, false)) {
           setShowEmailGate(true);
         }
       }, [audioReady]);
@@ -5492,7 +5508,12 @@
           )}
           {/* Email gate fires after the first free set; on submit it moves the user to the
               next set. No skip, no close. */}
-          {showEmailGate && <EmailGate onDone={() => { setShowEmailGate(false); loadNextTask(); }} />}
+          {showEmailGate && <EmailGate onDone={() => {
+            setShowEmailGate(false);
+            // Advance a set only when the gate interrupted the guided free exercises.
+            // In Custom Practice the user simply carries on with their session.
+            if (!isManualSession && isFreeTasteSpot(currentLevelId, curriculumWeek)) loadNextTask();
+          }} />}
           {showMemberNudge && <MemberNudge onClose={() => setShowMemberNudge(false)} />}
           {showKeyboardHelp && <KeyboardHelpOverlay onClose={() => setShowKeyboardHelp(false)} />}
           {showManualSetup && (
