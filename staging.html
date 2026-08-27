@@ -864,7 +864,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.21";
+    const APP_VERSION = "v2.22";
     try { window.__ETL_VERSION = APP_VERSION; } catch (e) {}
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
@@ -1502,7 +1502,7 @@
       return (
         <div className="overlay overlay-top" role="dialog" aria-modal="true" aria-label="Ear Training Lab, Compression, start"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
           <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div></div>
-          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Learn to hear what a compressor does to a sound. Every question has a clear right answer. Both channels are set to the same loudness, so you can't answer by volume alone. Use headphones or studio monitors for the best results.</p>
+          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Learn to hear what a compressor does to a sound.</p>
           {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
           <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading} autoFocus>{isLoading ? "Building source..." : "Continue from your last session →"}</button>
           {onUnlockFresh && (
