@@ -786,7 +786,17 @@
   </style>
 </head>
 <body>
-  <div id="app"></div>
+  <!-- Boot placeholder. React replaces this on mount. Without it the page is an empty
+       black rectangle for as long as the in-browser Babel transform takes, which on a
+       slow machine or connection reads as "the Lab is broken". Pure CSS, no JS needed. -->
+  <div id="app"><div id="etl-boot" style="min-height:60vh;display:flex;align-items:center;justify-content:center;padding:40px 20px">
+    <div style="text-align:center;font-family:system-ui,-apple-system,sans-serif;color:#e9e6df">
+      <div style="width:26px;height:26px;margin:0 auto 16px;border:3px solid #3a3833;border-top-color:#d4a13a;border-radius:50%;animation:etlspin 1s linear infinite"></div>
+      <div style="font-size:11px;letter-spacing:1.5px;text-transform:uppercase;color:#d4a13a;margin-bottom:8px">Ear Training Lab</div>
+      <div style="font-size:14px;color:#a9a49a">Loading. The first visit takes a few seconds.</div>
+    </div>
+  </div></div>
+  <style>@keyframes etlspin{to{transform:rotate(360deg)}}</style>
 
   <!-- React, ReactDOM and Babel come from a CDN. If unpkg is unreachable (network filter,
        privacy extension, DNS, regional block) each one falls back to jsdelivr. Without this
@@ -854,7 +864,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.20";
+    const APP_VERSION = "v2.21";
     try { window.__ETL_VERSION = APP_VERSION; } catch (e) {}
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
@@ -6628,7 +6638,9 @@
     (function () {
       function showLoadFailure() {
         var el = document.getElementById("app");
-        if (!el || el.children.length > 0) return;   // app mounted fine
+        // "Mounted" means React replaced the boot placeholder, not merely that #app
+        // has children (the placeholder is a child).
+        if (!el || (el.children.length > 0 && !document.getElementById("etl-boot"))) return;
         var missing = [];
         if (!window.React) missing.push("React");
         if (!window.ReactDOM) missing.push("ReactDOM");
@@ -6679,7 +6691,7 @@
         L.push("viewport: " + window.innerWidth + " x " + window.innerHeight);
         L.push("embedded: " + document.documentElement.classList.contains("embedded"));
         L.push("theme: " + (document.documentElement.getAttribute("data-theme") || "system default"));
-        L.push("app mounted: " + !!(app && app.children.length) + ", app height: " + (app ? Math.round(app.getBoundingClientRect().height) : 0));
+        L.push("app mounted: " + !!(app && app.children.length && !document.getElementById("etl-boot")) + ", app height: " + (app ? Math.round(app.getBoundingClientRect().height) : 0));
         L.push("body bg: " + bg(document.body));
         L.push("elements in app: " + (app ? app.querySelectorAll("*").length : 0));
         L.push("overlay present: " + !!document.querySelector(".overlay"));
