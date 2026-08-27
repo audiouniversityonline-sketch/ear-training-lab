@@ -32,8 +32,10 @@ if [[ ! -f staging.html || ! -f lab.html ]]; then
   exit 1
 fi
 
-# Copy the verified staging build over production.
-cp staging.html lab.html
+# Build production from the verified staging build. staging.html stays authored as
+# JSX; build.py compiles it ahead of time so members never download Babel (~3MB) or
+# wait for the browser to compile ~380KB of JSX on every visit.
+python3 build.py
 
 # Stage both so the repo stays consistent: the committed staging.html always
 # matches the committed lab.html (i.e. matches what's live).

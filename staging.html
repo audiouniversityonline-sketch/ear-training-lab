@@ -864,7 +864,7 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.22";
+    const APP_VERSION = "v2.23";
     try { window.__ETL_VERSION = APP_VERSION; } catch (e) {}
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
@@ -1498,20 +1498,82 @@
       return (<div className="seg flex-wrap" role="group">{options.map(o => { const on = set.includes(o.value); return (<button key={String(o.value)} className={on ? "active" : ""} aria-pressed={on} onClick={() => toggle(o.value)} disabled={disabled}>{o.label}</button>); })}</div>);
     }
 
-    function AudioUnlockOverlay({ onUnlock, onUnlockFresh, isLoading, error }) {
+    /* ============================================================
+       WELCOME SCREEN (shared by EQ and Compression)
+       One screen for the whole app: it is the same product and the member is
+       just coming back to it. Resumes the last session and lets them pick a
+       module in one click. The click also satisfies the browser's audio gesture.
+       ============================================================ */
+    function WelcomeScreen({ activeModule, onUnlock, onUnlockFresh, onPickModule, isLoading, error }) {
+      let lastSpot = null, hasHistory = false, lastModule = "eq";
+      if (!IS_FREE) {
+        try {
+          lastSpot = window.localStorage.getItem("etl:lastSpot");
+          lastModule = window.localStorage.getItem("etl:module") === "compression" ? "compression" : "eq";
+          hasHistory = !!lastSpot || window.localStorage.getItem("curriculumWeek") !== null;
+        } catch (e) {}
+      }
+      const lastLabel = lastModule === "compression" ? "Compression" : (lastSpot ? "EQ · " + lastSpot : "EQ");
+      const modBtn = (key, label, focus) => (
+        <button
+          className={"btn w-full " + (activeModule === key ? "btn-solid" : "btn-ghost")}
+          onClick={() => onPickModule && onPickModule(key)}
+          disabled={isLoading}
+          autoFocus={focus}
+        >{label}</button>
+      );
       return (
-        <div className="overlay overlay-top" role="dialog" aria-modal="true" aria-label="Ear Training Lab, Compression, start"><div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: "1px solid var(--rule)" }}>
-          <div className="flex items-center" style={{ gap: 12 }}><img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} /><div><div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div><div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>Compression</div></div></div>
-          <p className="text-mute leading-relaxed mt-5 mb-6 text-sm">Learn to hear what a compressor does to a sound.</p>
-          {error && <div className="text-hot font-mono text-xs mb-4">{error}</div>}
-          <button className="btn btn-solid w-full" onClick={onUnlock} disabled={isLoading} autoFocus>{isLoading ? "Building source..." : "Continue from your last session →"}</button>
-          {onUnlockFresh && (
-            <button className="btn btn-ghost w-full mt-3" onClick={onUnlockFresh} disabled={isLoading}>Start a fresh practice</button>
-          )}
-          <p className="text-xs mt-5 text-mute leading-relaxed">Switch between EQ and Compression anytime, or open Levels, Practice, and Learn from the top bar.</p>
-        </div></div>
+        <div className="overlay overlay-top" role="dialog" aria-modal="true" aria-label="Ear Training Lab, start">
+          <div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: '1px solid var(--rule)' }}>
+            <div className="flex items-center" style={{ gap: 12 }}>
+              <img src={window.AU_LOGO} alt="Audio University" style={{ height: 36, width: 36, display: "block" }} />
+              <div>
+                <div className="display" style={{ fontSize: 17, fontWeight: 800, letterSpacing: -0.4, lineHeight: 1 }}>Ear Training Lab</div>
+                <div className="mono" style={{ fontSize: 8, color: "var(--ink-3)", letterSpacing: 1, textTransform: "uppercase", marginTop: 2 }}>{activeModule === "compression" ? "Compression" : "Equalization"}</div>
+              </div>
+            </div>
+            <div className="divider mt-6 mb-6"></div>
+            {error ? (
+              <>
+                <div className="eyebrow mb-3">Audio Error</div>
+                <p className="text-sm mb-6 leading-relaxed">{error}</p>
+                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>Try Again</button>
+              </>
+            ) : isLoading ? (
+              <>
+                <div className="eyebrow mb-3">Initializing</div>
+                <p className="text-sm mb-6 leading-relaxed">Setting up the audio engine. This takes a moment on mobile.</p>
+                <div className="flex items-center gap-3">
+                  <div className="w-4 h-4 border-2 border-ink border-t-transparent rounded-full animate-spin"></div>
+                  <span className="text-xs font-mono">Please wait…</span>
+                </div>
+              </>
+            ) : IS_FREE ? (
+              <>
+                <p className="text-sm mb-6 leading-relaxed text-mute">Browsers need a click before audio can play.</p>
+                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>Enable Audio</button>
+                {isMobile() && (<p className="text-xs mt-4 text-mute leading-relaxed">Best with studio monitors or headphones. Make sure your device volume is up.</p>)}
+              </>
+            ) : (
+              <>
+                {hasHistory && (<h2 className="font-display font-bold italic text-2xl leading-tight mb-3">Welcome back.</h2>)}
+                {hasHistory && (<p className="font-mono text-xs text-mute mb-5">Last session: {lastLabel}</p>)}
+                {hasHistory && (<button className="btn btn-solid w-full mb-5" onClick={onUnlock} autoFocus>Continue from your last session →</button>)}
+                <div className="eyebrow mb-2">{hasHistory ? "Or start in" : "Start in"}</div>
+                <div className="grid grid-cols-2 gap-2">
+                  {modBtn("eq", "EQ", !hasHistory)}
+                  {modBtn("compression", "Compression", false)}
+                </div>
+                {onUnlockFresh && (<button className="btn btn-ghost w-full mt-3" onClick={onUnlockFresh} disabled={isLoading}>Start a fresh practice</button>)}
+                {isMobile() && (<p className="text-xs mt-4 text-mute leading-relaxed">Best with studio monitors or headphones. Make sure your device volume is up.</p>)}
+              </>
+            )}
+          </div>
+        </div>
       );
     }
+
+    function AudioUnlockOverlay(props) { return <WelcomeScreen {...props} />; }
 
     function paramValOf(preset, p) { if (!preset) return "—"; if (p === "attack") return fmtMs(preset.attack); if (p === "release") return fmtMs(preset.release); if (p === "ratio") return preset.ratio + ":1"; if (p === "threshold") return preset.threshold + " dB"; return ""; }
 
@@ -1684,7 +1746,7 @@
     }
 
     /* ============================================================ */
-    function CompressionModule({ activeModule, onSwitchModule, audioPreUnlocked, onAudioUnlocked }) {
+    function CompressionModule({ activeModule, onSwitchModule, onRequestModule, audioPreUnlocked, onAudioUnlocked }) {
       const ctxRef = useRef(null);
       const nodesRef = useRef(null);
       const monitorRef = useRef(null);
@@ -2211,7 +2273,7 @@
         <div className="min-h-screen flex flex-col">
           <h1 className="sr-only">Ear Training Lab, Compression</h1>
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
-          {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay onUnlock={unlock} onUnlockFresh={() => { setArea("practice"); unlock(); }} isLoading={audioLoading} error={audioError} />}
+          {!audioReady && (!audioPreUnlocked || audioError) && <AudioUnlockOverlay activeModule={activeModule} onPickModule={(m) => { if (m !== activeModule && onRequestModule) onRequestModule(m); unlock(); }} onUnlock={unlock} onUnlockFresh={() => { setArea("practice"); unlock(); }} isLoading={audioLoading} error={audioError} />}
           {showTour && <Walkthrough steps={compTourSteps(mode, isLearn)} onClose={() => setShowTour(false)} />}
 
           <header className="border-b rule">
@@ -2929,78 +2991,7 @@
        AUDIO UNLOCK OVERLAY
        ============================================================ */
 
-    function AudioUnlockOverlay({ onUnlock, onUnlockFresh, isLoading, error }) {
-      // Members get a small home screen: resume the course or jump straight into
-      // Custom Practice. Either click doubles as the browser's audio-enable gesture.
-      let lastSpot = null, hasHistory = false;
-      if (!IS_FREE) {
-        try {
-          lastSpot = window.localStorage.getItem("etl:lastSpot");
-          hasHistory = !!lastSpot || STORAGE.get("curriculumWeek", null) !== null;
-        } catch (e) {}
-      }
-      return (
-        <div className="overlay overlay-top" role="dialog" aria-modal="true" aria-label="Ear Training Lab, start">
-          <div className="bg-panel text-ink max-w-md w-full p-8" style={{ border: '1px solid var(--rule)' }}>
-            <Wordmark />
-            <div className="divider mt-6 mb-6"></div>
-
-            {error ? (
-              <>
-                <div className="eyebrow mb-3">Audio Error</div>
-                <p className="text-sm mb-6 leading-relaxed">{error}</p>
-                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>Try Again</button>
-              </>
-            ) : isLoading ? (
-              <>
-                <div className="eyebrow mb-3">Initializing</div>
-                <p className="text-sm mb-6 leading-relaxed">Setting up the audio engine. This takes a moment on mobile.</p>
-                <div className="flex items-center gap-3">
-                  <div className="w-4 h-4 border-2 border-ink border-t-transparent rounded-full animate-spin"></div>
-                  <span className="text-xs font-mono">Please wait…</span>
-                </div>
-              </>
-            ) : !IS_FREE ? (
-              <>
-                <h2 className="font-display font-bold italic text-2xl leading-tight mb-3">
-                  {hasHistory ? "Welcome back." : "Ear Training Lab"}
-                </h2>
-                {hasHistory && lastSpot && (
-                  <p className="font-mono text-xs text-mute mb-5">Last session: EQ · {lastSpot}</p>
-                )}
-                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>
-                  {hasHistory ? "Continue from your last session →" : "Start training →"}
-                </button>
-                {onUnlockFresh && (
-                  <button className="btn btn-ghost w-full mt-3" onClick={onUnlockFresh}>Start a fresh practice</button>
-                )}
-                <p className="text-xs mt-5 text-mute leading-relaxed">
-                  Switch between EQ and Compression anytime, or open Levels, Practice, and Learn from the top bar.
-                </p>
-                {isMobile() && (
-                  <p className="text-xs mt-3 text-mute leading-relaxed">
-                    Best with studio monitors or headphones. Make sure your device volume is up.
-                  </p>
-                )}
-              </>
-            ) : (
-              <>
-                <h2 className="font-display font-bold italic text-2xl leading-tight mb-3">Ear Training Lab</h2>
-                <p className="text-sm mb-6 leading-relaxed text-mute">
-                  Browsers require a click before audio can play. Tap below to enable audio and start training.
-                </p>
-                <button className="btn btn-solid w-full" onClick={onUnlock} autoFocus>Enable Audio</button>
-                {isMobile() && (
-                  <p className="text-xs mt-4 text-mute leading-relaxed">
-                    Best with studio monitors or headphones. Make sure your device volume is up.
-                  </p>
-                )}
-              </>
-            )}
-          </div>
-        </div>
-      );
-    }
+    function AudioUnlockOverlay(props) { return <WelcomeScreen {...props} />; }
 
     /* ============================================================
        TASK COMPLETE MODAL
@@ -3968,7 +3959,7 @@
       );
     }
 
-    function App({ activeModule, onSwitchModule, audioPreUnlocked, onAudioUnlocked }) {
+    function App({ activeModule, onSwitchModule, onRequestModule, audioPreUnlocked, onAudioUnlocked }) {
       /* ---------- Audio state ---------- */
       const [audioReady, setAudioReady] = useState(false);
       const [showUnlock, setShowUnlock] = useState(!audioPreUnlocked);
@@ -5508,7 +5499,7 @@
         <div className="min-h-screen flex flex-col">
           <h1 className="sr-only">Ear Training Lab, Equalization</h1>
           <div role="status" aria-live="polite" className="sr-only">{liveMsg}</div>
-          {(showUnlock || audioError) && <AudioUnlockOverlay onUnlock={initializeAudio} onUnlockFresh={() => { bootFreshRef.current = true; initializeAudio(); }} isLoading={audioLoading} error={audioError} />}
+          {(showUnlock || audioError) && <AudioUnlockOverlay activeModule={activeModule} onPickModule={(m) => { if (m !== activeModule && onRequestModule) onRequestModule(m); initializeAudio(); }} onUnlock={initializeAudio} onUnlockFresh={() => { bootFreshRef.current = true; initializeAudio(); }} isLoading={audioLoading} error={audioError} />}
           {showTour && (
             <Walkthrough
               onClose={() => setShowTour(false)}
@@ -6617,7 +6608,19 @@
       // Audio is enabled once for the whole app; both modules share that fact so
       // switching between EQ and Compression never re-prompts the unlock overlay.
       const [audioUnlocked, setAudioUnlocked] = useState(false);
-      const shared = { activeModule, onSwitchModule: switchModule, audioPreUnlocked: audioUnlocked, onAudioUnlocked: () => setAudioUnlocked(true) };
+      // Picking a module from the welcome screen has to do two things with one click:
+      // unlock audio (the browser needs the gesture, and only the mounted module can
+      // do it) and then move to the requested module. Record the request, and act on
+      // it once that module reports audio ready; the next module sees audioPreUnlocked
+      // and starts without asking again.
+      const pendingModuleRef = useRef(null);
+      const requestModule = (m) => { if (m !== activeModule) pendingModuleRef.current = m; };
+      const handleAudioUnlocked = () => {
+        setAudioUnlocked(true);
+        const p = pendingModuleRef.current;
+        if (p) { pendingModuleRef.current = null; switchModule(p); }
+      };
+      const shared = { activeModule, onSwitchModule: switchModule, onRequestModule: requestModule, audioPreUnlocked: audioUnlocked, onAudioUnlocked: handleAudioUnlocked };
       if (activeModule === "compression") {
         return IS_FREE
           ? <FreeCompressionLock activeModule={activeModule} onSwitchModule={switchModule} />
@@ -6644,7 +6647,7 @@
         var missing = [];
         if (!window.React) missing.push("React");
         if (!window.ReactDOM) missing.push("ReactDOM");
-        if (!window.Babel) missing.push("Babel");
+        if (!window.Babel && document.querySelector('script[src*="babel"]')) missing.push("Babel");
         var detail = missing.length ? missing.join(", ") : "app script";
         el.innerHTML =
           '<div style="max-width:540px;margin:0 auto;padding:48px 24px;font-family:system-ui,-apple-system,sans-serif;color:#e9e6df;line-height:1.6">' +
