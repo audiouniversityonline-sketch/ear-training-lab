@@ -854,7 +854,8 @@
     // Shown in both module footers so the running build is verifiable at a
     // glance (matches the Troubleshooting Lab convention). Bump on every
     // promote to match the release tag; staging labels itself automatically.
-    const APP_VERSION = "v2.19";
+    const APP_VERSION = "v2.20";
+    try { window.__ETL_VERSION = APP_VERSION; } catch (e) {}
     const VERSION_LABEL = APP_VERSION + (((typeof window !== "undefined") && /staging/i.test(window.location.pathname)) ? " · staging" : "");
     // Membership upgrade URL — centralized so it's one line to update if it ever changes.
     const MEMBERSHIP_URL = "https://audiouniversityonline.com/programs/mixing/";
@@ -6649,6 +6650,55 @@
           '</div>';
       }
       setTimeout(showLoadFailure, 10000);
+    })();
+  </script>
+
+  <!-- ?debug=1 render report. Answers "what is the black area?" by sampling what is
+       actually painted at points down the screen. Inert without the flag. -->
+  <script>
+    (function () {
+      try { if (new URLSearchParams(location.search).get("debug") !== "1") return; } catch (e) { return; }
+      var errors = [];
+      window.addEventListener("error", function (e) {
+        errors.push((e.message || "?") + " @ " + (e.filename || "?") + ":" + (e.lineno || "?"));
+      });
+      function bg(el) { try { return getComputedStyle(el).backgroundColor; } catch (e) { return "?"; } }
+      function describe(el) {
+        if (!el) return "nothing";
+        var cls = (el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className) || "";
+        return el.tagName.toLowerCase() +
+               (el.id ? "#" + el.id : "") +
+               (cls ? "." + String(cls).trim().split(/\s+/).slice(0, 3).join(".") : "") +
+               " bg=" + bg(el) + " h=" + Math.round(el.getBoundingClientRect().height);
+      }
+      function report() {
+        var app = document.getElementById("app");
+        var L = [];
+        L.push("EAR TRAINING LAB RENDER REPORT");
+        L.push("version: " + (window.__ETL_VERSION || "unknown"));
+        L.push("viewport: " + window.innerWidth + " x " + window.innerHeight);
+        L.push("embedded: " + document.documentElement.classList.contains("embedded"));
+        L.push("theme: " + (document.documentElement.getAttribute("data-theme") || "system default"));
+        L.push("app mounted: " + !!(app && app.children.length) + ", app height: " + (app ? Math.round(app.getBoundingClientRect().height) : 0));
+        L.push("body bg: " + bg(document.body));
+        L.push("elements in app: " + (app ? app.querySelectorAll("*").length : 0));
+        L.push("overlay present: " + !!document.querySelector(".overlay"));
+        var x = Math.round(window.innerWidth / 2);
+        var ys = [40, 120, 240, 400, 600];
+        for (var i = 0; i < ys.length; i++) {
+          if (ys[i] < window.innerHeight) {
+            L.push("painted at y=" + ys[i] + ": " + describe(document.elementFromPoint(x, ys[i])));
+          }
+        }
+        L.push("js errors: " + (errors.length ? errors.join(" | ") : "none"));
+        L.push("-- end --");
+        var box = document.createElement("div");
+        box.setAttribute("style", "position:fixed;left:0;right:0;bottom:0;z-index:2147483647;max-height:56%;overflow:auto;" +
+          "background:#fff;color:#111;font:12px ui-monospace,Menlo,monospace;padding:12px;border-top:3px solid #d4a13a;white-space:pre-wrap");
+        box.textContent = L.join("\n");
+        document.body.appendChild(box);
+      }
+      window.addEventListener("load", function () { setTimeout(report, 3500); });
     })();
   </script>
 </body>
