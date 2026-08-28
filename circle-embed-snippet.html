@@ -1,0 +1,62 @@
+<!--
+  CIRCLE EMBED - paste this whole block into the Custom HTML block on the
+  Ear Training page (replaces the previous iframe + script).
+
+  Two changes from the old snippet:
+    1. The iframe carries a plain link inside it, so if the browser refuses to
+       load the frame at all the member still sees a way in.
+    2. If the Lab has not reported its height within 12 seconds, it never ran
+       (blocked frame, extension, network filter). Rather than leaving a black
+       rectangle, the embed is replaced with a short explanation and a direct
+       link that opens the Lab in its own tab.
+  The Lab itself now loads in about a second, so 12 seconds is a generous wait.
+-->
+<iframe
+  src="https://audiouniversityonline-sketch.github.io/ear-training-lab/lab.html"
+  style="width:100%;border:0;height:900px;display:block"
+  allow="autoplay"
+  scrolling="no"
+  title="Ear Training Lab">
+  <a href="https://audiouniversityonline-sketch.github.io/ear-training-lab/lab.html">Open the Ear Training Lab</a>
+</iframe>
+<script>
+(function () {
+  var LAB = 'https://audiouniversityonline-sketch.github.io/ear-training-lab/lab.html';
+  var ORIGIN = 'https://audiouniversityonline-sketch.github.io';
+  var alive = false;
+
+  window.addEventListener('message', function (e) {
+    if (e.origin !== ORIGIN) return;
+    var d = e.data;
+    if (!d || d.type !== 'etl:height' || typeof d.height !== 'number') return;
+    alive = true;
+    var frames = document.querySelectorAll('iframe[src*="ear-training-lab"]');
+    for (var i = 0; i < frames.length; i++) {
+      if (frames[i].contentWindow === e.source) {
+        frames[i].style.height = Math.max(400, Math.min(d.height, 4000)) + 'px';
+      }
+    }
+  });
+
+  // No word from the Lab means it never ran here. Give the member a way through
+  // instead of a blank area they cannot do anything with.
+  setTimeout(function () {
+    if (alive) return;
+    var f = document.querySelector('iframe[src*="ear-training-lab"]') ||
+            document.querySelector('iframe[title="Ear Training Lab"]');
+    if (!f || !f.parentNode) return;
+    var box = document.createElement('div');
+    box.setAttribute('style',
+      'border:1px solid #d8d4cc;border-radius:10px;padding:28px 24px;text-align:center;' +
+      'font-family:system-ui,-apple-system,sans-serif;line-height:1.6;background:#faf9f7;color:#1b1a17');
+    box.innerHTML =
+      '<div style="font-weight:700;font-size:17px;margin-bottom:8px">The Ear Training Lab could not open here</div>' +
+      '<div style="color:#5f5a52;font-size:14px;margin-bottom:18px">Something in this browser is blocking embedded content. ' +
+      'Opening it in its own tab works around that.</div>' +
+      '<a href="' + LAB + '" target="_blank" rel="noopener" ' +
+      'style="display:inline-block;padding:12px 22px;background:#1b1a17;color:#fff;border-radius:8px;' +
+      'text-decoration:none;font-weight:600">Open the Ear Training Lab &rarr;</a>';
+    f.parentNode.replaceChild(box, f);
+  }, 12000);
+})();
+</script>
