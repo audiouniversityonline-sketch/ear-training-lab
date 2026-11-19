@@ -39,7 +39,7 @@ python3 build.py
 
 # Stage both so the repo stays consistent: the committed staging.html always
 # matches the committed lab.html (i.e. matches what's live).
-git add staging.html lab.html
+git add staging.html lab.html build.py vendor fonts
 
 if git diff --cached --quiet; then
   echo "✓ Nothing to promote — production already matches staging."
